@@ -1,0 +1,15 @@
+/* Reset for full-viewport viz */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #0c1220;
+}
+
+#app {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  border: none;
+  min-height: 100svh;
+}
