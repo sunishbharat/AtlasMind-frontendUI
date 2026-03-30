@@ -293,11 +293,12 @@
 <style>
   /* ── Shell ──────────────────────────────────────────────────────────────── */
   .shell {
-    width: 100%; min-height: 100svh;
+    width: 100%; height: 100svh;
     background: #0c1220;
     color: #e2e8f0;
     font-family: system-ui, 'Segoe UI', sans-serif;
     display: flex; flex-direction: column;
+    overflow: hidden;
   }
 
   /* ══════════════════════════════════════════════════════════════════════════

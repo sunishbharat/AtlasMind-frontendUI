@@ -13,3 +13,16 @@ body {
   border: none;
   min-height: 100svh;
 }
+
+/* Scrollbars — thin, dark, indigo-tinted to match the app theme */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2d3f5c transparent;
+}
+*::-webkit-scrollbar { width: 4px; height: 4px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #3b4f72, #818cf820);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover { background: #818cf8; }

@@ -13,6 +13,7 @@
 
   let query    = $state('')
   let loading  = $state(false)
+  let liveMode = $state(window.location.pathname.startsWith('/live'))
   let listEl   // scroll container
 
   // ── Auto-scroll on new messages ───────────────────────────────────────────
@@ -89,10 +90,35 @@
     query   = ''
     loading = true
 
-    // Simulate thinking delay
-    await new Promise(r => setTimeout(r, 480))
-    messages = [...messages, { role: 'assistant', text: respond(text) }]
-    loading  = false
+    if (!liveMode) {
+      // ── Demo path: local mock ────────────────────────────────────────────
+      await new Promise(r => setTimeout(r, 480))
+      messages = [...messages, { role: 'assistant', text: respond(text) }]
+    } else {
+      // ── Live path: AtlasMind API ─────────────────────────────────────────
+      try {
+        const res  = await fetch('/api/query', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ query: text }),
+        })
+        const data = await res.json()
+        if (data.error) {
+          messages = [...messages, { role: 'assistant', text: `**Error:** ${data.error}` }]
+        } else if (typeof data.output === 'object' && data.output?.issues) {
+          messages = [...messages, { role: 'assistant', type: 'table', data: data.output }]
+        } else {
+          messages = [...messages, { role: 'assistant', text: data.output || '(no output)', raw: true }]
+        }
+      } catch (err) {
+        messages = [...messages, {
+          role: 'assistant',
+          text: `**Could not reach backend.**\nStart the API server from AtlasMind-frontendUI/:\n\n  uv run main.py\n\n${err.message}`,
+        }]
+      }
+    }
+
+    loading = false
   }
 
   function onKeydown(e) {
@@ -120,7 +146,18 @@
         </svg>
         AI Assistant
       </div>
-      <span class="panel-hint">Sprint data · {[...dataStore.epics,...dataStore.stories,...dataStore.subtasks].length} issues</span>
+      <button
+        class="mode-toggle"
+        class:live={liveMode}
+        onclick={() => (liveMode = !liveMode)}
+        title={liveMode ? 'Switch to Demo mode' : 'Switch to Live mode (requires backend)'}
+      >
+        {#if liveMode}
+          <span class="mode-dot"></span>Live
+        {:else}
+          Demo
+        {/if}
+      </button>
     </div>
 
     <!-- Message list -->
@@ -130,9 +167,47 @@
           {#if msg.role === 'assistant'}
             <div class="msg-avatar">AI</div>
           {/if}
-          <div class="msg-bubble">
-            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-            {@html renderText(msg.text)}
+          <div class="msg-bubble" class:msg-bubble--table={msg.type === 'table'}>
+            {#if msg.type === 'table'}
+              <div class="result-meta">
+                <span class="result-count">{msg.data.shown} of {msg.data.total} issues</span>
+                <code class="result-jql" title={msg.data.jql}>{msg.data.jql}</code>
+              </div>
+              <div class="result-table-wrap">
+                <table class="result-table">
+                  <thead>
+                    <tr>
+                      <th>Key</th>
+                      <th>Summary</th>
+                      {#each msg.data.display_fields as col}
+                        <th>{col[0].toUpperCase() + col.slice(1).replace(/_/g, ' ')}</th>
+                      {/each}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each msg.data.issues as issue}
+                      <tr>
+                        <td class="cell-key">
+                          <a href="{msg.data.jira_base_url}/browse/{issue.key}" target="_blank" rel="noreferrer">{issue.key}</a>
+                        </td>
+                        <td class="cell-summary" title={issue.summary}>{issue.summary}</td>
+                        {#each msg.data.display_fields as col}
+                          <td>{issue[col] || '—'}</td>
+                        {/each}
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+              {#if msg.data.post_filters?.length}
+                <div class="result-filters">Filtered by: {msg.data.post_filters.join(', ')}</div>
+              {/if}
+            {:else if msg.raw}
+              <pre class="msg-pre">{msg.text}</pre>
+            {:else}
+              <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+              {@html renderText(msg.text)}
+            {/if}
           </div>
         </div>
       {/each}
@@ -213,9 +288,33 @@
     color: #e2e8f0;
   }
 
-  .panel-hint {
-    font-size: 10px;
-    color: #334155;
+  .mode-toggle {
+    all: unset;
+    cursor: pointer;
+    display: flex; align-items: center; gap: 4px;
+    font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em;
+    padding: 2px 8px; border-radius: 999px;
+    border: 1px solid #1e293b;
+    color: #475569; background: #0f1e32;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    margin-left: auto;
+  }
+
+  .mode-toggle.live {
+    color: #22c55e;
+    border-color: rgba(34,197,94,0.3);
+    background: rgba(34,197,94,0.07);
+  }
+
+  .mode-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: #22c55e;
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
   }
 
   /* ── Messages ────────────────────────────────────────────────────────────── */
@@ -226,8 +325,6 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
-    scrollbar-width: thin;
-    scrollbar-color: #1e293b transparent;
   }
 
   .msg {
@@ -264,6 +361,82 @@
     line-height: 1.55;
     color: #cbd5e1;
     word-break: break-word;
+  }
+
+  .msg-pre {
+    font-family: 'Consolas', monospace;
+    font-size: 10px;
+    white-space: pre;
+    overflow-x: auto;
+    margin: 0;
+    color: #94a3b8;
+    line-height: 1.5;
+  }
+
+  /* ── Table response ─────────────────────────────────────────────────────── */
+  .msg-bubble--table {
+    max-width: min(560px, 88vw);
+    padding: 8px 10px;
+  }
+
+  .result-meta {
+    display: flex; align-items: baseline; gap: 8px;
+    margin-bottom: 7px; flex-wrap: wrap;
+  }
+
+  .result-count {
+    font-size: 10px; font-weight: 700; color: #818cf8;
+    white-space: nowrap; flex-shrink: 0;
+  }
+
+  .result-jql {
+    font-family: 'Consolas', monospace; font-size: 9.5px;
+    color: #475569; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; max-width: 340px; display: block;
+  }
+
+  .result-table-wrap {
+    overflow-x: auto;
+    border: 1px solid #1e293b; border-radius: 5px;
+    scrollbar-width: thin; scrollbar-color: #1e293b transparent;
+  }
+
+  .result-table {
+    border-collapse: collapse; font-size: 10px;
+    width: 100%; white-space: nowrap;
+  }
+
+  .result-table thead tr { background: #0f172a; }
+
+  .result-table th {
+    padding: 5px 9px; text-align: left;
+    font-size: 9px; font-weight: 700; letter-spacing: 0.07em;
+    text-transform: uppercase; color: #334155;
+    border-bottom: 1px solid #1e293b;
+  }
+
+  .result-table td {
+    padding: 5px 9px; color: #94a3b8;
+    border-bottom: 1px solid #0f172a;
+    vertical-align: middle;
+  }
+
+  .result-table tbody tr:last-child td { border-bottom: none; }
+  .result-table tbody tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .cell-key a {
+    color: #818cf8; text-decoration: none; font-weight: 700;
+    font-family: 'Consolas', monospace; font-size: 10px;
+  }
+  .cell-key a:hover { text-decoration: underline; }
+
+  .cell-summary {
+    max-width: 180px; overflow: hidden;
+    text-overflow: ellipsis; color: #cbd5e1;
+  }
+
+  .result-filters {
+    margin-top: 6px; font-size: 9.5px; color: #475569; font-style: italic;
   }
 
   .msg-assistant .msg-bubble {
