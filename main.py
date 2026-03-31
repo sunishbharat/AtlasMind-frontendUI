@@ -124,6 +124,7 @@ def _index():
 def serve_demo(path: str = ""):
     return _index()
 
+@app.get("/")
 @app.get("/live")
 @app.get("/live/{path:path}")
 def serve_live(path: str = ""):

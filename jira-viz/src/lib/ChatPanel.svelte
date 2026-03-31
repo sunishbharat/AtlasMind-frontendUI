@@ -1,148 +1,212 @@
 <script>
-  import { dataStore } from './dataStore.svelte.js'
+  import { dataStore } from "./dataStore.svelte.js";
 
-  let { open = false } = $props()
+  let { open = false } = $props();
 
   // ── Message state ─────────────────────────────────────────────────────────
   let messages = $state([
     {
-      role: 'assistant',
-      text: 'Hi! I can answer questions about your sprint data — try asking about epics, assignees, story points, or issue status.',
+      role: "assistant",
+      text: "Hi! I can answer questions about your sprint data — try asking about epics, assignees, story points, or issue status.",
     },
-  ])
+  ]);
 
-  let query    = $state('')
-  let loading  = $state(false)
-  let liveMode = $state(window.location.pathname.startsWith('/live'))
-  let listEl   // scroll container
+  let query = $state("");
+  let loading = $state(false);
+  let liveMode = $state(window.location.pathname.startsWith("/live"));
+  let listEl; // scroll container
 
   // ── Auto-scroll on new messages ───────────────────────────────────────────
   $effect(() => {
-    messages
-    if (listEl) setTimeout(() => listEl.scrollTop = listEl.scrollHeight, 30)
-  })
+    messages;
+    if (listEl) setTimeout(() => (listEl.scrollTop = listEl.scrollHeight), 30);
+  });
 
   // ── Mock data-aware responses ─────────────────────────────────────────────
   function respond(q) {
-    const t   = q.toLowerCase()
-    const all = [...dataStore.epics, ...dataStore.stories, ...dataStore.subtasks]
+    const t = q.toLowerCase();
+    const all = [
+      ...dataStore.epics,
+      ...dataStore.stories,
+      ...dataStore.subtasks,
+    ];
 
-    if (t.includes('epic')) {
-      const names = dataStore.epics.map(e => `**${e.id}** ${e.title}`).join('\n')
-      return `There are **${dataStore.epics.length} epics** in this sprint:\n${names}`
+    if (t.includes("epic")) {
+      const names = dataStore.epics
+        .map((e) => `**${e.id}** ${e.title}`)
+        .join("\n");
+      return `There are **${dataStore.epics.length} epics** in this sprint:\n${names}`;
     }
-    if (t.includes('in progress')) {
-      const items = all.filter(i => i.status === 'In Progress')
-      return `**${items.length} issues** are in progress:\n` +
-        items.map(i => `• ${i.id} — ${i.title}`).join('\n')
+    if (t.includes("in progress")) {
+      const items = all.filter((i) => i.status === "In Progress");
+      return (
+        `**${items.length} issues** are in progress:\n` +
+        items.map((i) => `• ${i.id} — ${i.title}`).join("\n")
+      );
     }
-    if (t.includes('done') || t.includes('complet')) {
-      const items = all.filter(i => i.status === 'Done')
-      return `**${items.length} issues** are done:\n` +
-        items.map(i => `• ${i.id} — ${i.title}`).join('\n')
+    if (t.includes("done") || t.includes("complet")) {
+      const items = all.filter((i) => i.status === "Done");
+      return (
+        `**${items.length} issues** are done:\n` +
+        items.map((i) => `• ${i.id} — ${i.title}`).join("\n")
+      );
     }
-    if (t.includes('to do') || t.includes('todo') || t.includes('not start')) {
-      const items = all.filter(i => i.status === 'To Do')
-      return `**${items.length} issues** haven't started yet:\n` +
-        items.map(i => `• ${i.id} — ${i.title}`).join('\n')
+    if (t.includes("to do") || t.includes("todo") || t.includes("not start")) {
+      const items = all.filter((i) => i.status === "To Do");
+      return (
+        `**${items.length} issues** haven't started yet:\n` +
+        items.map((i) => `• ${i.id} — ${i.title}`).join("\n")
+      );
     }
-    if (t.includes('assign') || t.includes('who')) {
-      const byPerson = {}
-      all.forEach(i => { ;(byPerson[i.assignee] ??= []).push(i) })
+    if (t.includes("assign") || t.includes("who")) {
+      const byPerson = {};
+      all.forEach((i) => {
+        (byPerson[i.assignee] ??= []).push(i);
+      });
       return Object.entries(byPerson)
-        .map(([name, items]) => `**${name}** — ${items.length} issue${items.length > 1 ? 's' : ''} (${items.reduce((s, i) => s + i.points, 0)} pts)`)
-        .join('\n')
+        .map(
+          ([name, items]) =>
+            `**${name}** — ${items.length} issue${items.length > 1 ? "s" : ""} (${items.reduce((s, i) => s + i.points, 0)} pts)`,
+        )
+        .join("\n");
     }
-    if (t.includes('point') || t.includes('estimate')) {
-      const total = all.reduce((s, i) => s + i.points, 0)
-      const done  = all.filter(i => i.status === 'Done').reduce((s, i) => s + i.points, 0)
-      return `**${done} of ${total} story points** completed (${Math.round(done/total*100)}%).\n` +
-        dataStore.epics.map(e => {
-          const related = all.filter(i => i.id === e.id || i.epicId === e.id || (i.storyId && dataStore.stories.find(s => s.id === i.storyId)?.epicId === e.id))
-          return `• ${e.title}: ${related.reduce((s, i) => s + i.points, 0)} pts`
-        }).join('\n')
+    if (t.includes("point") || t.includes("estimate")) {
+      const total = all.reduce((s, i) => s + i.points, 0);
+      const done = all
+        .filter((i) => i.status === "Done")
+        .reduce((s, i) => s + i.points, 0);
+      return (
+        `**${done} of ${total} story points** completed (${Math.round((done / total) * 100)}%).\n` +
+        dataStore.epics
+          .map((e) => {
+            const related = all.filter(
+              (i) =>
+                i.id === e.id ||
+                i.epicId === e.id ||
+                (i.storyId &&
+                  dataStore.stories.find((s) => s.id === i.storyId)?.epicId ===
+                    e.id),
+            );
+            return `• ${e.title}: ${related.reduce((s, i) => s + i.points, 0)} pts`;
+          })
+          .join("\n")
+      );
     }
-    if (t.includes('summar') || t.includes('overview') || t.includes('status')) {
-      const byStatus = { Done: 0, 'In Progress': 0, 'To Do': 0 }
-      all.forEach(i => byStatus[i.status]++)
-      return `**Sprint overview** — ${all.length} issues total:\n` +
-        `• ✅ Done: ${byStatus['Done']}\n` +
-        `• 🔵 In Progress: ${byStatus['In Progress']}\n` +
-        `• ⬜ To Do: ${byStatus['To Do']}`
+    if (
+      t.includes("summar") ||
+      t.includes("overview") ||
+      t.includes("status")
+    ) {
+      const byStatus = { Done: 0, "In Progress": 0, "To Do": 0 };
+      all.forEach((i) => byStatus[i.status]++);
+      return (
+        `**Sprint overview** — ${all.length} issues total:\n` +
+        `• ✅ Done: ${byStatus["Done"]}\n` +
+        `• 🔵 In Progress: ${byStatus["In Progress"]}\n` +
+        `• ⬜ To Do: ${byStatus["To Do"]}`
+      );
     }
-    if (t.includes('stor')) {
-      return `There are **${dataStore.stories.length} stories** across ${dataStore.epics.length} epics:\n` +
-        dataStore.stories.map(s => `• ${s.id} — ${s.title} (${s.status})`).join('\n')
+    if (t.includes("stor")) {
+      return (
+        `There are **${dataStore.stories.length} stories** across ${dataStore.epics.length} epics:\n` +
+        dataStore.stories
+          .map((s) => `• ${s.id} — ${s.title} (${s.status})`)
+          .join("\n")
+      );
     }
-    if (t.includes('sub') || t.includes('task')) {
-      return `There are **${dataStore.subtasks.length} sub-tasks** in the sprint:\n` +
-        dataStore.subtasks.map(s => `• ${s.id} — ${s.title} (${s.status})`).join('\n')
+    if (t.includes("sub") || t.includes("task")) {
+      return (
+        `There are **${dataStore.subtasks.length} sub-tasks** in the sprint:\n` +
+        dataStore.subtasks
+          .map((s) => `• ${s.id} — ${s.title} (${s.status})`)
+          .join("\n")
+      );
     }
-    return `I can help with sprint data. Try:\n• "Show in progress issues"\n• "Who is assigned what?"\n• "How many story points remain?"\n• "Give me an overview"`
+    return `I can help with sprint data. Try:\n• "Show in progress issues"\n• "Who is assigned what?"\n• "How many story points remain?"\n• "Give me an overview"`;
   }
 
   // ── Send ──────────────────────────────────────────────────────────────────
   async function send() {
-    const text = query.trim()
-    if (!text || loading) return
+    const text = query.trim();
+    if (!text || loading) return;
 
-    messages = [...messages, { role: 'user', text }]
-    query   = ''
-    loading = true
+    messages = [...messages, { role: "user", text }];
+    query = "";
+    loading = true;
 
     if (!liveMode) {
       // ── Demo path: local mock ────────────────────────────────────────────
-      await new Promise(r => setTimeout(r, 480))
-      messages = [...messages, { role: 'assistant', text: respond(text) }]
+      await new Promise((r) => setTimeout(r, 480));
+      messages = [...messages, { role: "assistant", text: respond(text) }];
     } else {
       // ── Live path: AtlasMind API ─────────────────────────────────────────
       try {
-        const res  = await fetch('/api/query', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ query: text }),
-        })
-        const data = await res.json()
+        const res = await fetch("/api/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: text }),
+        });
+        const data = await res.json();
         if (data.error) {
-          messages = [...messages, { role: 'assistant', text: `**Error:** ${data.error}` }]
-        } else if (typeof data.output === 'object' && data.output?.issues) {
-          messages = [...messages, { role: 'assistant', type: 'table', data: data.output }]
+          messages = [
+            ...messages,
+            { role: "assistant", text: `**Error:** ${data.error}` },
+          ];
+        } else if (data.output?.type === "jql") {
+          messages = [
+            ...messages,
+            { role: "assistant", type: "table", data: data.output },
+          ];
         } else {
-          messages = [...messages, { role: 'assistant', text: data.output || '(no output)', raw: true }]
+          messages = [
+            ...messages,
+            {
+              role: "assistant",
+              text: data.output?.answer ?? data.output ?? "(no output)",
+            },
+          ];
         }
       } catch (err) {
-        messages = [...messages, {
-          role: 'assistant',
-          text: `**Could not reach backend.**\nStart the API server from AtlasMind-frontendUI/:\n\n  uv run main.py\n\n${err.message}`,
-        }]
+        messages = [
+          ...messages,
+          {
+            role: "assistant",
+            text: `**Could not reach backend.**\nStart the API server from AtlasMind-frontendUI/:\n\n  uv run main.py\n\n${err.message}`,
+          },
+        ];
       }
     }
 
-    loading = false
+    loading = false;
   }
 
   function onKeydown(e) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
   }
 
   // ── Markdown-lite renderer (bold + newlines only) ─────────────────────────
   function renderText(text) {
     return text
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\n/g, '<br>')
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\n/g, "<br>");
   }
 </script>
 
 <aside class="panel" class:open>
   <div class="panel-inner">
-
     <!-- Header -->
     <div class="panel-header">
       <div class="panel-title">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <circle cx="7" cy="7" r="6" stroke="#818cf8" stroke-width="1.3"/>
-          <path d="M4.5 5.5C4.5 4.12 5.62 3 7 3s2.5 1.12 2.5 2.5c0 1.2-.8 2.2-1.9 2.45V9h-1.2V7.95C5.3 7.7 4.5 6.7 4.5 5.5z" fill="#818cf8"/>
-          <circle cx="7" cy="11" r=".7" fill="#818cf8"/>
+          <circle cx="7" cy="7" r="6" stroke="#818cf8" stroke-width="1.3" />
+          <path
+            d="M4.5 5.5C4.5 4.12 5.62 3 7 3s2.5 1.12 2.5 2.5c0 1.2-.8 2.2-1.9 2.45V9h-1.2V7.95C5.3 7.7 4.5 6.7 4.5 5.5z"
+            fill="#818cf8"
+          />
+          <circle cx="7" cy="11" r=".7" fill="#818cf8" />
         </svg>
         AI Assistant
       </div>
@@ -150,7 +214,9 @@
         class="mode-toggle"
         class:live={liveMode}
         onclick={() => (liveMode = !liveMode)}
-        title={liveMode ? 'Switch to Demo mode' : 'Switch to Live mode (requires backend)'}
+        title={liveMode
+          ? "Switch to Demo mode"
+          : "Switch to Live mode (requires backend)"}
       >
         {#if liveMode}
           <span class="mode-dot"></span>Live
@@ -163,15 +229,33 @@
     <!-- Message list -->
     <div class="msg-list" bind:this={listEl}>
       {#each messages as msg (msg)}
-        <div class="msg" class:msg-user={msg.role === 'user'} class:msg-assistant={msg.role === 'assistant'}>
-          {#if msg.role === 'assistant'}
+        <div
+          class="msg"
+          class:msg-user={msg.role === "user"}
+          class:msg-assistant={msg.role === "assistant"}
+        >
+          {#if msg.role === "assistant"}
             <div class="msg-avatar">AI</div>
           {/if}
-          <div class="msg-bubble" class:msg-bubble--table={msg.type === 'table'}>
-            {#if msg.type === 'table'}
+          <div
+            class="msg-bubble"
+            class:msg-bubble--table={msg.type === "table"}
+          >
+            {#if msg.type === "table"}
+              {#if msg.data.answer}
+                <p class="result-answer">{msg.data.answer}</p>
+              {/if}
               <div class="result-meta">
-                <span class="result-count">{msg.data.shown} of {msg.data.total} issues</span>
-                <code class="result-jql" title={msg.data.jql}>{msg.data.jql}</code>
+                <a
+                  class="result-count"
+                  href="{msg.data.jira_base_url}/issues/?jql={encodeURIComponent(msg.data.jql)}"
+                  target="_blank"
+                  rel="noreferrer"
+                  >{msg.data.shown} of {msg.data.total} issues</a
+                >
+                <code class="result-jql" title={msg.data.jql}
+                  >{msg.data.jql}</code
+                >
               </div>
               <div class="result-table-wrap">
                 <table class="result-table">
@@ -180,7 +264,10 @@
                       <th>Key</th>
                       <th>Summary</th>
                       {#each msg.data.display_fields as col}
-                        <th>{col[0].toUpperCase() + col.slice(1).replace(/_/g, ' ')}</th>
+                        <th
+                          >{col[0].toUpperCase() +
+                            col.slice(1).replace(/_/g, " ")}</th
+                        >
                       {/each}
                     </tr>
                   </thead>
@@ -188,11 +275,17 @@
                     {#each msg.data.issues as issue}
                       <tr>
                         <td class="cell-key">
-                          <a href="{msg.data.jira_base_url}/browse/{issue.key}" target="_blank" rel="noreferrer">{issue.key}</a>
+                          <a
+                            href="{msg.data.jira_base_url}/browse/{issue.key}"
+                            target="_blank"
+                            rel="noreferrer">{issue.key}</a
+                          >
                         </td>
-                        <td class="cell-summary" title={issue.summary}>{issue.summary}</td>
+                        <td class="cell-summary" title={issue.summary}
+                          >{issue.summary}</td
+                        >
                         {#each msg.data.display_fields as col}
-                          <td>{issue[col] || '—'}</td>
+                          <td>{issue[col] || "—"}</td>
                         {/each}
                       </tr>
                     {/each}
@@ -200,7 +293,9 @@
                 </table>
               </div>
               {#if msg.data.post_filters?.length}
-                <div class="result-filters">Filtered by: {msg.data.post_filters.join(', ')}</div>
+                <div class="result-filters">
+                  Filtered by: {msg.data.post_filters.join(", ")}
+                </div>
               {/if}
             {:else if msg.raw}
               <pre class="msg-pre">{msg.text}</pre>
@@ -232,14 +327,24 @@
         rows="1"
         disabled={loading}
       ></textarea>
-      <button class="send-btn" onclick={send} disabled={!query.trim() || loading} aria-label="Send">
+      <button
+        class="send-btn"
+        onclick={send}
+        disabled={!query.trim() || loading}
+        aria-label="Send"
+      >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <path d="M12 7L2 2l2.5 5L2 12l10-5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" fill="none"/>
+          <path
+            d="M12 7L2 2l2.5 5L2 12l10-5z"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linejoin="round"
+            fill="none"
+          />
         </svg>
       </button>
     </div>
     <p class="input-hint">Enter to send · Shift+Enter for new line</p>
-
   </div>
 </aside>
 
@@ -262,7 +367,7 @@
   }
 
   .panel-inner {
-    width: 340px;               /* fixed so content doesn't squeeze during animation */
+    width: 340px; /* fixed so content doesn't squeeze during animation */
     height: 100%;
     display: flex;
     flex-direction: column;
@@ -291,30 +396,46 @@
   .mode-toggle {
     all: unset;
     cursor: pointer;
-    display: flex; align-items: center; gap: 4px;
-    font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em;
-    padding: 2px 8px; border-radius: 999px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 2px 8px;
+    border-radius: 999px;
     border: 1px solid #1e293b;
-    color: #475569; background: #0f1e32;
-    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    color: #475569;
+    background: #0f1e32;
+    transition:
+      color 0.15s,
+      border-color 0.15s,
+      background 0.15s;
     margin-left: auto;
   }
 
   .mode-toggle.live {
     color: #22c55e;
-    border-color: rgba(34,197,94,0.3);
-    background: rgba(34,197,94,0.07);
+    border-color: rgba(34, 197, 94, 0.3);
+    background: rgba(34, 197, 94, 0.07);
   }
 
   .mode-dot {
-    width: 5px; height: 5px; border-radius: 50%;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
     background: #22c55e;
     animation: pulse-dot 2s ease-in-out infinite;
   }
 
   @keyframes pulse-dot {
-    0%, 100% { opacity: 1; }
-    50%       { opacity: 0.4; }
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.4;
+    }
   }
 
   /* ── Messages ────────────────────────────────────────────────────────────── */
@@ -341,8 +462,8 @@
     width: 24px;
     height: 24px;
     border-radius: 50%;
-    background: rgba(129,140,248,0.15);
-    border: 1px solid rgba(129,140,248,0.2);
+    background: rgba(129, 140, 248, 0.15);
+    border: 1px solid rgba(129, 140, 248, 0.2);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -364,7 +485,7 @@
   }
 
   .msg-pre {
-    font-family: 'Consolas', monospace;
+    font-family: "Consolas", monospace;
     font-size: 10px;
     white-space: pre;
     overflow-x: auto;
@@ -379,64 +500,106 @@
     padding: 8px 10px;
   }
 
+  .result-answer {
+    margin: 0 0 10px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
   .result-meta {
-    display: flex; align-items: baseline; gap: 8px;
-    margin-bottom: 7px; flex-wrap: wrap;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 7px;
+    flex-wrap: wrap;
   }
 
   .result-count {
-    font-size: 10px; font-weight: 700; color: #818cf8;
-    white-space: nowrap; flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 700;
+    color: #818cf8;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .result-jql {
-    font-family: 'Consolas', monospace; font-size: 9.5px;
-    color: #475569; overflow: hidden; text-overflow: ellipsis;
-    white-space: nowrap; max-width: 340px; display: block;
+    font-family: "Consolas", monospace;
+    font-size: 9.5px;
+    color: #475569;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 340px;
+    display: block;
   }
 
   .result-table-wrap {
     overflow-x: auto;
-    border: 1px solid #1e293b; border-radius: 5px;
-    scrollbar-width: thin; scrollbar-color: #1e293b transparent;
+    border: 1px solid #1e293b;
+    border-radius: 5px;
+    scrollbar-width: thin;
+    scrollbar-color: #1e293b transparent;
   }
 
   .result-table {
-    border-collapse: collapse; font-size: 10px;
-    width: 100%; white-space: nowrap;
+    border-collapse: collapse;
+    font-size: 10px;
+    width: 100%;
+    white-space: nowrap;
   }
 
-  .result-table thead tr { background: #0f172a; }
+  .result-table thead tr {
+    background: #0f172a;
+  }
 
   .result-table th {
-    padding: 5px 9px; text-align: left;
-    font-size: 9px; font-weight: 700; letter-spacing: 0.07em;
-    text-transform: uppercase; color: #334155;
+    padding: 5px 9px;
+    text-align: left;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: #334155;
     border-bottom: 1px solid #1e293b;
   }
 
   .result-table td {
-    padding: 5px 9px; color: #94a3b8;
+    padding: 5px 9px;
+    color: #94a3b8;
     border-bottom: 1px solid #0f172a;
     vertical-align: middle;
   }
 
-  .result-table tbody tr:last-child td { border-bottom: none; }
-  .result-table tbody tr:hover td { background: rgba(255,255,255,0.02); }
+  .result-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .result-table tbody tr:hover td {
+    background: rgba(255, 255, 255, 0.02);
+  }
 
   .cell-key a {
-    color: #818cf8; text-decoration: none; font-weight: 700;
-    font-family: 'Consolas', monospace; font-size: 10px;
+    color: #818cf8;
+    text-decoration: none;
+    font-weight: 700;
+    font-family: "Consolas", monospace;
+    font-size: 10px;
   }
-  .cell-key a:hover { text-decoration: underline; }
+  .cell-key a:hover {
+    text-decoration: underline;
+  }
 
   .cell-summary {
-    max-width: 180px; overflow: hidden;
-    text-overflow: ellipsis; color: #cbd5e1;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #cbd5e1;
   }
 
   .result-filters {
-    margin-top: 6px; font-size: 9.5px; color: #475569; font-style: italic;
+    margin-top: 6px;
+    font-size: 9.5px;
+    color: #475569;
+    font-style: italic;
   }
 
   .msg-assistant .msg-bubble {
@@ -446,8 +609,8 @@
   }
 
   .msg-user .msg-bubble {
-    background: rgba(129,140,248,0.12);
-    border: 1px solid rgba(129,140,248,0.2);
+    background: rgba(129, 140, 248, 0.12);
+    border: 1px solid rgba(129, 140, 248, 0.2);
     border-top-right-radius: 3px;
     color: #e2e8f0;
     text-align: right;
@@ -469,12 +632,24 @@
     animation: pulse 1.2s ease-in-out infinite;
   }
 
-  .msg-typing span:nth-child(2) { animation-delay: 0.2s; }
-  .msg-typing span:nth-child(3) { animation-delay: 0.4s; }
+  .msg-typing span:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+  .msg-typing span:nth-child(3) {
+    animation-delay: 0.4s;
+  }
 
   @keyframes pulse {
-    0%, 80%, 100% { opacity: 0.3; transform: scale(0.85); }
-    40% { opacity: 1; transform: scale(1); }
+    0%,
+    80%,
+    100% {
+      opacity: 0.3;
+      transform: scale(0.85);
+    }
+    40% {
+      opacity: 1;
+      transform: scale(1);
+    }
   }
 
   /* ── Input ───────────────────────────────────────────────────────────────── */
@@ -505,9 +680,15 @@
     scrollbar-width: thin;
   }
 
-  .input-box:focus { border-color: #334155; }
-  .input-box::placeholder { color: #334155; }
-  .input-box:disabled { opacity: 0.5; }
+  .input-box:focus {
+    border-color: #334155;
+  }
+  .input-box::placeholder {
+    color: #334155;
+  }
+  .input-box:disabled {
+    opacity: 0.5;
+  }
 
   .send-btn {
     all: unset;
@@ -521,11 +702,18 @@
     background: #818cf8;
     color: #fff;
     flex-shrink: 0;
-    transition: background 0.15s, opacity 0.15s;
+    transition:
+      background 0.15s,
+      opacity 0.15s;
   }
 
-  .send-btn:hover:not(:disabled) { background: #6366f1; }
-  .send-btn:disabled { opacity: 0.3; cursor: default; }
+  .send-btn:hover:not(:disabled) {
+    background: #6366f1;
+  }
+  .send-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
 
   .input-hint {
     font-size: 9.5px;
