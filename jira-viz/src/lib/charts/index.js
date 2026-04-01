@@ -8,7 +8,8 @@
 //   import { features } from '$lib/charts/index.js';
 //   features.charts.enabled = false;
 
-export { default as ChartPanel }    from './ChartPanel.svelte';
+export { default as ChartPanel }       from './ChartPanel.svelte';
+export { default as AIHierarchyView }  from './AIHierarchyView.svelte';
 export { default as ChartRenderer } from './ChartRenderer.svelte';
 export { default as ChartView }     from './ChartView.svelte';
 export { chartStore }               from './chartStore.svelte.js';

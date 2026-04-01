@@ -9,6 +9,7 @@
   import { buildAllSpecs, fromExplicitSpec } from './specBuilder.js';
   import { features } from '../features.svelte.js';
   import ChartRenderer from './ChartRenderer.svelte';
+  import AIHierarchyView from './AIHierarchyView.svelte';
 
   // ── Table data ────────────────────────────────────────────────────────────
   const issues        = $derived(chartStore.issues ?? []);
@@ -170,6 +171,9 @@
       return sortDir === 'asc' ? cmp : -cmp;
     });
   });
+
+  // ── Table view mode ───────────────────────────────────────────────────────
+  let tableMode = $state('table'); // 'table' | 'hierarchy'
 
   // Close dropdown on outside click
   $effect(() => {
@@ -342,14 +346,66 @@
             {#if chartStore.data?.jql}
               <code class="cv-jql" title={chartStore.data.jql}>{chartStore.data.jql}</code>
             {/if}
-            <span class="cv-table-count">
-              {hasActiveFilters ? `${filteredIssues.length} of ` : ''}{chartStore.data?.shown ?? issues.length}{chartStore.data?.total ? ` / ${chartStore.data.total}` : ''}
-            </span>
+            {#if chartStore.data?.jira_base_url && chartStore.data?.jql}
+              <a
+                class="cv-table-count cv-table-count--link"
+                href="{chartStore.data.jira_base_url}/issues/?jql={encodeURIComponent(chartStore.data.jql)}"
+                target="_blank"
+                rel="noreferrer"
+                title="Open in Jira"
+              >
+                {hasActiveFilters ? `${filteredIssues.length} of ` : ''}{chartStore.data?.shown ?? issues.length}{chartStore.data?.total ? ` / ${chartStore.data.total}` : ''}
+              </a>
+            {:else}
+              <span class="cv-table-count">
+                {hasActiveFilters ? `${filteredIssues.length} of ` : ''}{chartStore.data?.shown ?? issues.length}{chartStore.data?.total ? ` / ${chartStore.data.total}` : ''}
+              </span>
+            {/if}
             {#if hasActiveFilters}
               <button class="cv-clear-all" onclick={clearAllFilters} title="Clear all filters">✕ Clear filters</button>
             {/if}
+            <!-- View mode toggle -->
+            <div class="cv-view-toggle">
+              <button
+                class="cv-view-btn"
+                class:active={tableMode === 'table'}
+                onclick={() => (tableMode = 'table')}
+                title="Table view"
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <rect x="1" y="1" width="8" height="2" rx=".5" fill="currentColor"/>
+                  <rect x="1" y="4" width="8" height="2" rx=".5" fill="currentColor" opacity=".6"/>
+                  <rect x="1" y="7" width="8" height="2" rx=".5" fill="currentColor" opacity=".35"/>
+                </svg>
+                Table
+              </button>
+              <button
+                class="cv-view-btn"
+                class:active={tableMode === 'hierarchy'}
+                onclick={() => (tableMode = 'hierarchy')}
+                title="Hierarchy view"
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <circle cx="2" cy="5" r="1.2" fill="currentColor"/>
+                  <circle cx="5" cy="2.5" r="1.2" fill="currentColor"/>
+                  <circle cx="5" cy="7.5" r="1.2" fill="currentColor"/>
+                  <circle cx="8" cy="5" r="1.2" fill="currentColor"/>
+                  <line x1="3.2" y1="5" x2="3.8" y2="2.5" stroke="currentColor" stroke-width="1"/>
+                  <line x1="3.2" y1="5" x2="3.8" y2="7.5" stroke="currentColor" stroke-width="1"/>
+                  <line x1="6.2" y1="2.5" x2="6.8" y2="5" stroke="currentColor" stroke-width="1"/>
+                  <line x1="6.2" y1="7.5" x2="6.8" y2="5" stroke="currentColor" stroke-width="1"/>
+                </svg>
+                Hierarchy
+              </button>
+            </div>
           </div>
 
+          {#if tableMode === 'hierarchy'}
+            <AIHierarchyView
+              issues={sortedIssues}
+              jiraBaseUrl={chartStore.data?.jira_base_url ?? ''}
+            />
+          {:else}
           <div class="cv-table-wrap">
             <table class="cv-table">
               <thead>
@@ -470,6 +526,7 @@
               </tbody>
             </table>
           </div>
+          {/if}
         {:else}
           <div class="cv-empty-table">Table results will appear here</div>
         {/if}
@@ -910,6 +967,38 @@
     font-weight: 600;
   }
 
+  /* ── View mode toggle ────────────────────────────────────────────────────── */
+  .cv-view-toggle {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 2px;
+    flex-shrink: 0;
+  }
+
+  .cv-view-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 500;
+    color: #475569;
+    transition: color 0.12s, background 0.12s;
+  }
+  .cv-view-btn:hover { color: #94a3b8; }
+  .cv-view-btn.active {
+    color: #818cf8;
+    background: rgba(129, 140, 248, 0.15);
+  }
+
   /* ── Table ───────────────────────────────────────────────────────────────── */
   .cv-table-header {
     display: flex;
@@ -946,6 +1035,14 @@
     font-weight: 700;
     color: #818cf8;
     flex-shrink: 0;
+  }
+  .cv-table-count--link {
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .cv-table-count--link:hover {
+    text-decoration: underline;
+    color: #a5b4fc;
   }
 
   .cv-table-wrap {
