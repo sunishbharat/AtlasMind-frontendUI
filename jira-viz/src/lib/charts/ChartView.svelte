@@ -10,22 +10,108 @@
   import { features } from '../features.svelte.js';
   import ChartRenderer from './ChartRenderer.svelte';
 
-  // ── Chart specs ───────────────────────────────────────────────────────────
+  // ── Table data ────────────────────────────────────────────────────────────
+  const issues        = $derived(chartStore.issues ?? []);
+  const displayFields = $derived(chartStore.data?.display_fields ?? []);
+  const hasTable      = $derived(issues.length > 0);
+
+  // ── Table filters ─────────────────────────────────────────────────────────
+  // Case-insensitive date field name set
+  const DATE_KEYS = new Set(['created', 'resolutiondate', 'updated', 'duedate', 'resolutionDate', 'createdDate']);
+
+  function isDateLike(key, sample) {
+    return DATE_KEYS.has(key)
+      || DATE_KEYS.has(key.toLowerCase())
+      || /^\d{4}-\d{2}-\d{2}/.test(String(sample ?? ''));
+  }
+
+  // Returns YYYY-MM-DD string — safe to sort lexicographically, safe to parse
+  function toDateKey(str) {
+    try {
+      const d = new Date(str);
+      return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+    } catch { return null; }
+  }
+
+  // Formats any YYYY-MM-DD string for display; returns value unchanged if not a date key
+  function fmtDateKey(key) {
+    if (!key || key === 'Not set') return key ?? 'Not set';
+    const m = key.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return key;
+    const [, y, mo, d] = m.map(Number);
+    return new Date(y, mo - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  // Map of fieldKey → { values: string[], isDate: bool }
+  const filterableMap = $derived.by(() => {
+    const map = {};
+    if (!issues.length) return map;
+    for (const key of displayFields) {
+      const sample  = issues.find(i => i[key] != null)?.[key];
+      const dateCol = isDateLike(key, sample);
+
+      const keys = issues.map(i => {
+        const v = i[key];
+        if (v == null || v === '') return 'Not set';
+        if (dateCol) return toDateKey(String(v)) ?? 'Not set';
+        return String(v);
+      });
+
+      const values = [...new Set(keys)].sort((a, b) => {
+        if (a === 'Not set') return 1;
+        if (b === 'Not set') return -1;
+        return a.localeCompare(b);   // YYYY-MM-DD sorts correctly as string
+      });
+
+      if (values.length >= 2) map[key] = { values, isDate: dateCol };
+    }
+    return map;
+  });
+
+  // activeFilters: { fieldKey: Set<string> } — absent or empty = no filter
+  let activeFilters  = $state({});
+  let openFilter     = $state(null);   // column key of open dropdown
+  let filterSearch   = $state('');     // search text inside open dropdown
+
+  const filteredIssues = $derived.by(() => {
+    const active = Object.entries(activeFilters).filter(([, s]) => s.size > 0);
+    if (!active.length) return issues;
+    return issues.filter(issue =>
+      active.every(([key, vals]) => {
+        const info = filterableMap[key];
+        const raw  = issue[key];
+        let val;
+        if (raw == null || raw === '') val = 'Not set';
+        else if (info?.isDate) val = toDateKey(String(raw)) ?? 'Not set';
+        else val = String(raw);
+        return vals.has(val);
+      })
+    );
+  });
+
+  const hasActiveFilters = $derived(Object.values(activeFilters).some(s => s.size > 0));
+
+  // ── Chart specs (declared after filteredIssues so it can reference it) ───
+  let reactToFilters = $state(false);
+
   const specs = $derived.by(() => {
+    const src = reactToFilters && hasActiveFilters ? filteredIssues : issues;
     if (chartStore.chartSpec) {
       const opt = fromExplicitSpec(chartStore.chartSpec, features.charts.animation);
       return opt
         ? { explicit: { label: chartStore.chartSpec.title ?? 'Chart', icon: chartStore.chartSpec.type ?? 'bar', option: opt } }
         : {};
     }
-    return buildAllSpecs(chartStore.issues, features.charts.maxItems, features.charts.animation);
+    return buildAllSpecs(src, features.charts.maxItems, features.charts.animation);
   });
 
   const tabKeys = $derived(Object.keys(specs));
 
   let activeTab = $state(null);
   $effect(() => {
-    if (tabKeys.length) {
+    if (!tabKeys.length) return;
+    // Only reset when the active tab no longer exists (new query) or nothing is selected yet
+    if (!activeTab || !tabKeys.includes(activeTab)) {
       const preferred = tabKeys.find(k => k.startsWith(features.charts.defaultType));
       activeTab = preferred ?? tabKeys[0];
     }
@@ -33,10 +119,64 @@
 
   const currentOption = $derived(activeTab ? specs[activeTab]?.option ?? {} : {});
 
-  // ── Table data ────────────────────────────────────────────────────────────
-  const issues       = $derived(chartStore.issues ?? []);
-  const displayFields = $derived(chartStore.data?.display_fields ?? []);
-  const hasTable     = $derived(issues.length > 0);
+  function openDropdown(col) {
+    openFilter = openFilter === col ? null : col;
+    filterSearch = '';
+  }
+
+  function toggleFilterValue(field, value) {
+    const next = new Set(activeFilters[field] ?? []);
+    next.has(value) ? next.delete(value) : next.add(value);
+    activeFilters = { ...activeFilters, [field]: next };
+  }
+
+  function clearColumnFilter(field) {
+    const { [field]: _, ...rest } = activeFilters;
+    activeFilters = rest;
+  }
+
+  function clearAllFilters() { activeFilters = {}; }
+
+  // ── Column sort ───────────────────────────────────────────────────────────
+  let sortCol = $state(null);   // field key or 'key' | 'summary'
+  let sortDir = $state('asc');  // 'asc' | 'desc'
+
+  function toggleSort(col) {
+    if (sortCol === col) {
+      sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      sortCol = col;
+      sortDir = 'asc';
+    }
+  }
+
+  const sortedIssues = $derived.by(() => {
+    if (!sortCol) return filteredIssues;
+    return [...filteredIssues].sort((a, b) => {
+      const info = filterableMap[sortCol];
+      let av = a[sortCol] ?? '';
+      let bv = b[sortCol] ?? '';
+      // Date columns: compare as timestamps
+      if (info?.isDate || isDateLike(sortCol, av)) {
+        const ad = av ? new Date(av).getTime() : 0;
+        const bd = bv ? new Date(bv).getTime() : 0;
+        return sortDir === 'asc' ? ad - bd : bd - ad;
+      }
+      // Numeric columns
+      const an = Number(av), bn = Number(bv);
+      if (!isNaN(an) && !isNaN(bn)) return sortDir === 'asc' ? an - bn : bn - an;
+      // String columns
+      const cmp = String(av).localeCompare(String(bv));
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  });
+
+  // Close dropdown on outside click
+  $effect(() => {
+    function onDoc(e) { if (!e.target.closest('.cv-col-filter')) openFilter = null; }
+    document.addEventListener('click', onDoc);
+    return () => document.removeEventListener('click', onDoc);
+  });
 
   // ── Layout state ──────────────────────────────────────────────────────────
   // 'vertical'  → chart on top,  table on bottom
@@ -128,6 +268,7 @@
         style="{layout === 'vertical' ? 'height' : 'width'}:{splitPct}%"
       >
         {#if tabKeys.length}
+          <div class="cv-tabs-row">
           <div class="cv-tabs">
             {#each tabKeys as key}
               <button
@@ -154,6 +295,24 @@
                 {specs[key].label}
               </button>
             {/each}
+          </div>
+
+          <!-- React-to-filters toggle -->
+          <button
+            class="cv-react-btn"
+            class:active={reactToFilters}
+            onclick={() => (reactToFilters = !reactToFilters)}
+            title={reactToFilters ? 'Chart reacting to table filters — click to unlock' : 'Chart showing all data — click to sync with filters'}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <path d="M1 2.5h8M2.5 5h5M4 7.5h2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            </svg>
+            {reactToFilters ? 'Synced' : 'Sync chart'}
+            {#if reactToFilters && hasActiveFilters}
+              <span class="cv-react-dot"></span>
+            {/if}
+          </button>
+
           </div>
 
           <div class="cv-chart-area">
@@ -183,23 +342,113 @@
             {#if chartStore.data?.jql}
               <code class="cv-jql" title={chartStore.data.jql}>{chartStore.data.jql}</code>
             {/if}
-            {#if chartStore.data?.shown != null}
-              <span class="cv-table-count">{chartStore.data.shown} / {chartStore.data.total}</span>
+            <span class="cv-table-count">
+              {hasActiveFilters ? `${filteredIssues.length} of ` : ''}{chartStore.data?.shown ?? issues.length}{chartStore.data?.total ? ` / ${chartStore.data.total}` : ''}
+            </span>
+            {#if hasActiveFilters}
+              <button class="cv-clear-all" onclick={clearAllFilters} title="Clear all filters">✕ Clear filters</button>
             {/if}
           </div>
+
           <div class="cv-table-wrap">
             <table class="cv-table">
               <thead>
                 <tr>
-                  <th>Key</th>
-                  <th>Summary</th>
+                  <th onclick={() => toggleSort('key')} class="th-sortable" class:th-sorted={sortCol === 'key'}>
+                    <div class="th-inner">
+                      <span class="th-label">Key</span>
+                      <span class="sort-icon">{sortCol === 'key' ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                    </div>
+                  </th>
+                  <th onclick={() => toggleSort('summary')} class="th-sortable" class:th-sorted={sortCol === 'summary'}>
+                    <div class="th-inner">
+                      <span class="th-label">Summary</span>
+                      <span class="sort-icon">{sortCol === 'summary' ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                    </div>
+                  </th>
                   {#each displayFields as col}
-                    <th>{col[0].toUpperCase() + col.slice(1).replace(/_/g, ' ')}</th>
+                    {@const colInfo   = filterableMap[col]}
+                    {@const colFilter = activeFilters[col]}
+                    {@const isFiltered = (colFilter?.size ?? 0) > 0}
+                    <th class:th-filtered={isFiltered} class:th-sorted={sortCol === col} class="th-sortable" onclick={() => toggleSort(col)}>
+                      <div class="th-inner">
+                        <span class="th-label">{col[0].toUpperCase() + col.slice(1).replace(/_/g, ' ')}</span>
+                        <span class="sort-icon">{sortCol === col ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                        {#if colInfo}
+                          <div class="cv-col-filter">
+                            <button
+                              class="col-filter-btn"
+                              class:active={isFiltered}
+                              onclick={(e) => { e.stopPropagation(); openDropdown(col); }}
+                              onmousedown={(e) => e.stopPropagation()}
+                              title="Filter {col}"
+                            >
+                              {#if isFiltered}
+                                <span class="col-filter-badge">{colFilter.size}</span>
+                              {:else}
+                                <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+                                  <path d="M1 2h8M2.5 5h5M4 8h2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                                </svg>
+                              {/if}
+                            </button>
+                            {#if openFilter === col}
+                              <div class="col-filter-menu">
+                                <div class="col-filter-head">
+                                  <span>{col[0].toUpperCase() + col.slice(1).replace(/_/g, ' ')}</span>
+                                  {#if isFiltered}
+                                    <button class="col-filter-reset" onclick={() => clearColumnFilter(col)}>Reset</button>
+                                  {/if}
+                                </div>
+                                {#if colInfo.values.length > 8}
+                                  <div class="col-filter-search">
+                                    <input
+                                      class="col-filter-input"
+                                      type="text"
+                                      placeholder="Search…"
+                                      bind:value={filterSearch}
+                                      onclick={(e) => e.stopPropagation()}
+                                    />
+                                  </div>
+                                {/if}
+                                <div class="col-filter-list">
+                                {#each colInfo.values.filter(v => !filterSearch || fmtDateKey(v).toLowerCase().includes(filterSearch.toLowerCase())) as val}
+                                  {@const checked = colFilter?.has(val) ?? false}
+                                  <button
+                                    class="col-filter-item"
+                                    class:checked
+                                    onclick={() => toggleFilterValue(col, val)}
+                                  >
+                                    <span class="col-filter-check" class:checked>
+                                      {#if checked}
+                                        <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                                          <path d="M1 4l2 2 4-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                      {/if}
+                                    </span>
+                                    <span class="col-filter-val">{fmtDateKey(val)}</span>
+                                    <span class="col-filter-count">
+                                      {issues.filter(i => {
+                                        const raw = i[col];
+                                        const v = (raw == null || raw === '') ? 'Not set'
+                                          : colInfo.isDate ? (toDateKey(String(raw)) ?? 'Not set')
+                                          : String(raw);
+                                        return v === val;
+                                      }).length}
+                                    </span>
+                                  </button>
+                                {/each}
+                                </div>
+                              </div>
+                            {/if}
+                          </div>
+                        {/if}
+                      </div>
+                    </th>
                   {/each}
                 </tr>
               </thead>
               <tbody>
-                {#each issues as issue}
+                {#each sortedIssues as issue}
                   <tr>
                     <td class="cell-key">
                       {#if chartStore.data?.jira_base_url}
@@ -337,14 +586,22 @@
   .cv-pane--chart { flex-shrink: 0; }
   .cv-pane--table { flex: 1; }
 
+  /* ── Tabs row ────────────────────────────────────────────────────────────── */
+  .cv-tabs-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    border-bottom: 1px solid #1e293b;
+    padding-bottom: 6px;
+  }
+
   /* ── Tabs ────────────────────────────────────────────────────────────────── */
   .cv-tabs {
     display: flex;
     flex-wrap: wrap;
     gap: 3px;
-    flex-shrink: 0;
-    padding: 0 0 6px;
-    border-bottom: 1px solid #1e293b;
+    flex: 1;
   }
 
   .cv-tab {
@@ -366,6 +623,48 @@
     color: #818cf8;
     background: rgba(129, 140, 248, 0.1);
     border-color: rgba(129, 140, 248, 0.25);
+  }
+
+  /* ── React-to-filters toggle ─────────────────────────────────────────────── */
+  .cv-react-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 5px;
+    border: 1px solid #1e293b;
+    background: none;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 500;
+    color: #334155;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: color 0.12s, border-color 0.12s, background 0.12s;
+  }
+
+  .cv-react-btn:hover {
+    color: #64748b;
+    border-color: #334155;
+  }
+
+  .cv-react-btn.active {
+    color: #818cf8;
+    border-color: rgba(129, 140, 248, 0.4);
+    background: rgba(129, 140, 248, 0.08);
+  }
+
+  .cv-react-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #818cf8;
+    animation: pulse-dot 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
   }
 
   /* ── Chart area ──────────────────────────────────────────────────────────── */
@@ -432,6 +731,183 @@
   .cv-divider--h .cv-divider-dots {
     width: 3px;
     height: 28px;
+  }
+
+  /* ── Column filters ──────────────────────────────────────────────────────── */
+  .cv-clear-all {
+    margin-left: auto;
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    background: none;
+    cursor: pointer;
+    font-size: 10px;
+    color: #334155;
+    flex-shrink: 0;
+    transition: color 0.12s;
+  }
+  .cv-clear-all:hover { color: #f87171; }
+
+  /* th sort */
+  .th-sortable { cursor: pointer; user-select: none; }
+  .th-sortable:hover { color: #64748b !important; }
+  .th-sorted { color: #818cf8 !important; background: rgba(129,140,248,0.06) !important; }
+
+  .sort-icon {
+    font-size: 9px;
+    color: #1e3a5f;
+    flex-shrink: 0;
+    transition: color 0.12s;
+    line-height: 1;
+  }
+  .th-sorted .sort-icon { color: #818cf8; }
+  .th-sortable:hover .sort-icon { color: #475569; }
+
+  /* th layout */
+  .th-inner {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+  }
+  .th-label { flex: 1; }
+  .th-filtered { color: #818cf8 !important; background: rgba(129,140,248,0.06) !important; }
+
+  /* filter trigger button inside th */
+  .cv-col-filter { position: relative; }
+
+  .col-filter-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: #2d3f55;
+    padding: 0;
+    transition: color 0.12s, background 0.12s;
+    flex-shrink: 0;
+  }
+  .col-filter-btn:hover { color: #64748b; background: rgba(255,255,255,0.06); }
+  .col-filter-btn.active { color: #818cf8; }
+
+  .col-filter-badge {
+    font-size: 9px;
+    font-weight: 700;
+    color: #818cf8;
+    line-height: 1;
+  }
+
+  /* dropdown menu */
+  .col-filter-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    min-width: 160px;
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 7px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.6);
+    z-index: 200;
+    overflow: hidden;
+  }
+
+  .col-filter-list {
+    max-height: 200px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #1e293b transparent;
+  }
+
+  .col-filter-search {
+    padding: 5px 8px;
+    border-bottom: 1px solid #1e293b;
+  }
+
+  .col-filter-input {
+    width: 100%;
+    background: #070f1c;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    color: #94a3b8;
+    font-size: 11px;
+    padding: 4px 7px;
+    outline: none;
+    box-sizing: border-box;
+  }
+
+  .col-filter-input::placeholder { color: #334155; }
+  .col-filter-input:focus { border-color: #334155; }
+
+  .col-filter-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 10px 5px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #334155;
+    border-bottom: 1px solid #1e293b;
+  }
+
+  .col-filter-reset {
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 9.5px;
+    color: #475569;
+    padding: 0;
+    transition: color 0.12s;
+  }
+  .col-filter-reset:hover { color: #f87171; }
+
+  .col-filter-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    padding: 6px 10px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 11px;
+    color: #64748b;
+    text-align: left;
+    transition: background 0.1s, color 0.1s;
+  }
+  .col-filter-item:hover { background: rgba(255,255,255,0.04); color: #94a3b8; }
+  .col-filter-item.checked { color: #e2e8f0; }
+
+  .col-filter-check {
+    width: 13px;
+    height: 13px;
+    border-radius: 3px;
+    border: 1px solid #1e293b;
+    background: #070f1c;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: #818cf8;
+    transition: border-color 0.12s, background 0.12s;
+  }
+  .col-filter-check.checked {
+    border-color: rgba(129,140,248,0.5);
+    background: rgba(129,140,248,0.15);
+  }
+
+  .col-filter-val { flex: 1; }
+
+  .col-filter-count {
+    font-size: 9px;
+    color: #1e3a5f;
+    font-weight: 600;
   }
 
   /* ── Table ───────────────────────────────────────────────────────────────── */
