@@ -5,6 +5,7 @@
   import { STATUS_STYLE } from "./data.js";
   import { dataStore } from "./dataStore.svelte.js";
   import { vizState } from "./state.svelte.js";
+  import { ChartView, chartStore } from "./charts/index.js";
 
   // ── View registry ─────────────────────────────────────────────────────────
   const VIEWS = [
@@ -21,6 +22,13 @@
       description: "Flat backlog list with hierarchy",
       icon: "▤",
       component: TableView,
+    },
+    {
+      id: "chart",
+      label: "AI Chart",
+      description: "Chart from AI query results",
+      icon: "◉",
+      component: ChartView,
     },
     // { id: 'timeline', label: 'Timeline',       description: 'Gantt-style sprint view',             icon: '⟶', component: TimelineView  },
     // { id: 'burndown', label: 'Burndown Chart', description: 'Sprint progress over time',           icon: '↘', component: BurndownView  },
@@ -61,6 +69,13 @@
   function onWindowClick(e) {
     if (!e.target.closest(".view-selector")) dropdownOpen = false;
   }
+
+  // ── Auto-switch to chart view when AI results arrive ─────────────────────
+  $effect(() => {
+    if (chartStore.hasData) {
+      selectedIds = new Set(["chart"]);
+    }
+  });
 
   // ── CSV upload ────────────────────────────────────────────────────────────
   let fileInput;

@@ -1,5 +1,6 @@
 <script>
   import { dataStore } from "./dataStore.svelte.js";
+  import { chartStore } from "./charts/index.js";
 
   let { open = false } = $props();
 
@@ -157,6 +158,7 @@
             ...messages,
             { role: "assistant", type: "table", data: data.output },
           ];
+          chartStore.setFromResponse(data.output, text);
         } else {
           messages = [
             ...messages,
@@ -185,6 +187,37 @@
       e.preventDefault();
       send();
     }
+  }
+
+  // ── Dynamic result summary ────────────────────────────────────────────────
+  function summariseResult(data) {
+    if (data.answer) return data.answer;
+    const issues = data.issues ?? [];
+    if (!issues.length) return "Query executed.";
+
+    // Count by status (fallback to first display field)
+    const groupField = issues.some(i => i.status) ? "status"
+      : issues.some(i => i.priority) ? "priority"
+      : null;
+
+    if (!groupField) return `Found **${data.shown ?? issues.length} issues**.`;
+
+    const counts = {};
+    for (const i of issues) {
+      const val = i[groupField] ?? "Unknown";
+      counts[val] = (counts[val] ?? 0) + 1;
+    }
+    const top = Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([k, v]) => `**${k} (${v})**`)
+      .join(", ");
+
+    const total = data.total ?? issues.length;
+    const shown = data.shown ?? issues.length;
+    const countStr = shown < total ? `**${shown} of ${total} issues**` : `**${shown} issue${shown !== 1 ? "s" : ""}**`;
+
+    return `Found ${countStr}. By ${groupField}: ${top}. Chart updated on the left.`;
   }
 
   // ── Markdown-lite renderer (bold + newlines only) ─────────────────────────
@@ -239,64 +272,10 @@
           {/if}
           <div
             class="msg-bubble"
-            class:msg-bubble--table={msg.type === "table"}
           >
             {#if msg.type === "table"}
-              {#if msg.data.answer}
-                <p class="result-answer">{msg.data.answer}</p>
-              {/if}
-              <div class="result-meta">
-                <a
-                  class="result-count"
-                  href="{msg.data.jira_base_url}/issues/?jql={encodeURIComponent(msg.data.jql)}"
-                  target="_blank"
-                  rel="noreferrer"
-                  >{msg.data.shown} of {msg.data.total} issues</a
-                >
-                <code class="result-jql" title={msg.data.jql}
-                  >{msg.data.jql}</code
-                >
-              </div>
-              <div class="result-table-wrap">
-                <table class="result-table">
-                  <thead>
-                    <tr>
-                      <th>Key</th>
-                      <th>Summary</th>
-                      {#each msg.data.display_fields as col}
-                        <th
-                          >{col[0].toUpperCase() +
-                            col.slice(1).replace(/_/g, " ")}</th
-                        >
-                      {/each}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {#each msg.data.issues as issue}
-                      <tr>
-                        <td class="cell-key">
-                          <a
-                            href="{msg.data.jira_base_url}/browse/{issue.key}"
-                            target="_blank"
-                            rel="noreferrer">{issue.key}</a
-                          >
-                        </td>
-                        <td class="cell-summary" title={issue.summary}
-                          >{issue.summary}</td
-                        >
-                        {#each msg.data.display_fields as col}
-                          <td>{issue[col] || "—"}</td>
-                        {/each}
-                      </tr>
-                    {/each}
-                  </tbody>
-                </table>
-              </div>
-              {#if msg.data.post_filters?.length}
-                <div class="result-filters">
-                  Filtered by: {msg.data.post_filters.join(", ")}
-                </div>
-              {/if}
+              <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+              {@html renderText(summariseResult(msg.data))}
             {:else if msg.raw}
               <pre class="msg-pre">{msg.text}</pre>
             {:else}
@@ -324,7 +303,7 @@
         bind:value={query}
         onkeydown={onKeydown}
         placeholder="Ask about your sprint…"
-        rows="1"
+        rows="3"
         disabled={loading}
       ></textarea>
       <button
@@ -673,7 +652,7 @@
     padding: 8px 11px;
     resize: none;
     line-height: 1.5;
-    max-height: 120px;
+    max-height: 90px;
     overflow-y: auto;
     outline: none;
     transition: border-color 0.15s;
