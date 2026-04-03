@@ -324,13 +324,128 @@ export function buildAllSpecs(issues: ApiIssue[], maxItems = 20, animation = tru
   return specs;
 }
 
+export function buildScatter(
+  issues: ApiIssue[],
+  xField: string,
+  yField: string,
+  title: string,
+  animation = true,
+): EChartsOption | null {
+  // Try pure numeric scatter: both fields produce numbers
+  const numericPts = issues
+    .map(i => {
+      const x = Number(i[xField]);
+      const y = Number(i[yField]);
+      return isNaN(x) || isNaN(y) ? null : { value: [x, y] as [number, number], name: String(i.key ?? '') };
+    })
+    .filter((p): p is { value: [number, number]; name: string } => p !== null);
+
+  if (numericPts.length >= 2) {
+    return {
+      ...BASE_OPTION,
+      animation,
+      title: { text: title, textStyle: { color: '#94a3b8', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
+      tooltip: {
+        trigger: 'item',
+        formatter: (p: unknown) => {
+          const pt = p as { name: string; value: [number, number] };
+          return `${pt.name}<br/>${xField}: ${pt.value[0]}<br/>${yField}: ${pt.value[1]}`;
+        },
+      },
+      xAxis: {
+        type: 'value', name: xField, nameTextStyle: { color: '#475569', fontSize: 10 },
+        axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false },
+        axisLabel: { color: '#475569', fontSize: 10 },
+        splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
+      },
+      yAxis: {
+        type: 'value', name: yField, nameTextStyle: { color: '#475569', fontSize: 10 },
+        axisLine: { show: false }, axisTick: { show: false },
+        axisLabel: { color: '#475569', fontSize: 10 },
+        splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
+      },
+      series: [{ type: 'scatter', data: numericPts, symbolSize: 8, itemStyle: { color: paletteColor(0), opacity: 0.8 } }],
+    };
+  }
+
+  // Categorical x_field: aggregate then scatter
+  const entries: [string, number][] =
+    yField === 'count' || !yField
+      ? countByField(issues, xField)
+      : sumByField(issues, yField, xField);
+  if (!entries.length) return null;
+
+  const categories = entries.map(([k]) => k);
+  return {
+    ...BASE_OPTION,
+    animation,
+    title: { text: title, textStyle: { color: '#94a3b8', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
+    tooltip: { trigger: 'item' },
+    xAxis: {
+      type: 'category', data: categories,
+      axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false },
+      axisLabel: { color: '#475569', fontSize: 10, rotate: categories.length > 6 ? 30 : 0, interval: 0 },
+      splitLine: { show: false },
+    },
+    yAxis: {
+      type: 'value', axisLine: { show: false }, axisTick: { show: false },
+      axisLabel: { color: '#475569', fontSize: 10 },
+      splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
+      minInterval: 1,
+    },
+    series: [{
+      type: 'scatter',
+      data: entries.map(([, v], i) => ({ value: v, itemStyle: { color: paletteColor(i), opacity: 0.85 } })),
+      symbolSize: 10,
+    }],
+  };
+}
+
+const DATE_FIELDS = new Set(['created', 'updated', 'resolutiondate', 'duedate']);
+
 /**
  * Build a single spec from an explicit server-provided chartSpec.
- * Expected shape: { type, title, categories, values }
+ * Expected shape: { type, title, x_field, y_field }
  */
-export function fromExplicitSpec(chartSpec: ChartSpec, animation = true): EChartsOption | null {
-  if (!chartSpec?.categories?.length || !chartSpec?.values?.length) return null;
-  const entries: [string, number][] = chartSpec.categories.map((c, i) => [c, chartSpec.values![i]]);
+export function fromExplicitSpec(chartSpec: ChartSpec, issues: ApiIssue[], animation = true): EChartsOption | null {
+  if (!chartSpec || !issues.length) return null;
+
+  // Scatter: always handled first regardless of field types
+  if (chartSpec.type === 'scatter') {
+    return buildScatter(issues, chartSpec.x_field, chartSpec.y_field, chartSpec.title ?? 'Chart', animation);
+  }
+
+  const xLower = chartSpec.x_field?.toLowerCase() ?? '';
+
+  if (DATE_FIELDS.has(xLower)) {
+    // Line chart on a date field → use the full multi-series trend chart
+    if (chartSpec.type === 'line') return buildTrend(issues, animation);
+
+    // Bar/pie on a date field → bucket by day/week/month so bars are grouped correctly
+    const allDates = issues
+      .map(i => parseDate(i[chartSpec.x_field]))
+      .filter((d): d is Date => d !== null);
+    if (!allDates.length) return null;
+    const bucket   = autoBucket(
+      new Date(Math.min(...allDates.map(d => d.getTime()))),
+      new Date(Math.max(...allDates.map(d => d.getTime()))),
+    );
+    const bucketed = bucketByDate(issues, chartSpec.x_field, bucket);
+    if (!bucketed.length) return null;
+    const entries: [string, number][] = bucketed.map(b => [b.label, b.count]);
+    return chartSpec.type === 'pie'
+      ? buildPie(entries, chartSpec.title ?? 'Chart', 20, animation)
+      : buildBar(entries, chartSpec.title ?? 'Chart', 20, animation);
+  }
+
+  // Non-date x_field: aggregate by field value
+  const entries: [string, number][] =
+    chartSpec.y_field === 'count' || !chartSpec.y_field
+      ? countByField(issues, chartSpec.x_field)
+      : sumByField(issues, chartSpec.y_field, chartSpec.x_field);
+
+  if (!entries.length) return null;
+
   return chartSpec.type === 'pie'
     ? buildPie(entries, chartSpec.title ?? 'Chart', 20, animation)
     : buildBar(entries, chartSpec.title ?? 'Chart', 20, animation);

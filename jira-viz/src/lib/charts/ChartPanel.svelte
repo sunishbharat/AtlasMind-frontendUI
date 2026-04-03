@@ -12,11 +12,12 @@
 
   const specs = $derived.by((): Record<string, SpecEntry> => {
     if (!features.charts.enabled || !features.charts.autoDerive) return {};
+    const auto = buildAllSpecs(data.issues ?? [], features.charts.maxItems, features.charts.animation);
     if (data.chartSpec) {
-      const opt = fromExplicitSpec(data.chartSpec, features.charts.animation);
-      return opt ? { explicit: { label: data.chartSpec.title ?? 'Chart', icon: data.chartSpec.type ?? 'bar', option: opt } } : {};
+      const opt = fromExplicitSpec(data.chartSpec, data.issues ?? [], features.charts.animation);
+      if (opt) return { explicit: { label: data.chartSpec.title ?? 'Chart', icon: data.chartSpec.type ?? 'bar', option: opt }, ...auto };
     }
-    return buildAllSpecs(data.issues ?? [], features.charts.maxItems, features.charts.animation);
+    return auto;
   });
 
   const tabKeys   = $derived(Object.keys(specs));
@@ -67,12 +68,25 @@
           <button
             class="chart-tab"
             class:active={activeTab === key}
+            class:ai={key === 'explicit'}
             onclick={() => (activeTab = key)}
           >
-            {#if specs[key].icon === 'pie'}
+            {#if key === 'explicit'}
+              <svg class="ai-spark" width="9" height="9" viewBox="0 0 10 10" fill="none">
+                <path d="M5 1v2M5 7v2M1 5h2M7 5h2M2.5 2.5l1.4 1.4M6.1 6.1l1.4 1.4M7.5 2.5L6.1 3.9M3.9 6.1L2.5 7.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            {:else if specs[key].icon === 'pie'}
               <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
                 <path d="M4.5 4.5V.5A4 4 0 1 1 .5 4.5z" fill="currentColor" opacity=".7"/>
                 <path d="M4.5 4.5H8.5A4 4 0 0 0 4.5.5z" fill="currentColor"/>
+              </svg>
+            {:else if specs[key].icon === 'scatter'}
+              <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+                <circle cx="2" cy="7" r="1.2" fill="currentColor"/>
+                <circle cx="4.5" cy="3.5" r="1.2" fill="currentColor"/>
+                <circle cx="7.5" cy="5.5" r="1.2" fill="currentColor"/>
+                <circle cx="1.5" cy="2" r="1.2" fill="currentColor" opacity=".6"/>
+                <circle cx="6.5" cy="1.5" r="1.2" fill="currentColor" opacity=".6"/>
               </svg>
             {:else}
               <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
@@ -178,6 +192,25 @@
     color: #94a3b8;
     background: rgba(255,255,255,0.04);
   }
+
+  /* AI dynamic chart tab */
+  .chart-tab.ai {
+    background: linear-gradient(135deg, rgba(129,140,248,0.12) 0%, rgba(167,139,250,0.08) 100%);
+    border-color: rgba(139,92,246,0.3);
+    color: #a78bfa;
+  }
+  .chart-tab.ai:hover {
+    background: linear-gradient(135deg, rgba(129,140,248,0.2) 0%, rgba(167,139,250,0.14) 100%);
+    border-color: rgba(167,139,250,0.45);
+    color: #c4b5fd;
+  }
+  .chart-tab.ai.active {
+    background: linear-gradient(135deg, rgba(129,140,248,0.28) 0%, rgba(167,139,250,0.2) 100%);
+    border-color: rgba(167,139,250,0.6);
+    color: #ddd6fe;
+    box-shadow: 0 0 10px rgba(139,92,246,0.25), inset 0 0 8px rgba(129,140,248,0.08);
+  }
+  .ai-spark { flex-shrink: 0; }
 
   .chart-tab.active {
     color: #818cf8;

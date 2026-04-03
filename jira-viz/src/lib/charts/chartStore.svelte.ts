@@ -5,8 +5,9 @@
 export interface ChartSpec {
   type: string;
   title?: string;
-  categories?: string[];
-  values?: number[];
+  x_field: string;
+  y_field: string;
+  color_field?: string | null;
 }
 
 /** Raw server response shape for JQL queries. */
@@ -40,7 +41,8 @@ class ChartStore {
   setFromResponse(responseData: QueryResponse, queryText = ''): void {
     this.data      = responseData;
     this.issues    = responseData?.issues ?? [];
-    this.chartSpec = responseData?.chartSpec ?? null;
+    // backend sends chart_spec (snake_case) — handle both casings
+    this.chartSpec = (responseData as Record<string, unknown>)?.chart_spec as ChartSpec ?? responseData?.chartSpec ?? null;
     this.query     = queryText;
   }
 

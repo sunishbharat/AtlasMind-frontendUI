@@ -11,6 +11,7 @@
     type?: string;
     data?: QueryResponse;
     raw?: boolean;
+    elapsed?: number;   // ms from request start to response received
   }
 
   let messages = $state<Message[]>([
@@ -148,6 +149,7 @@
       messages = [...messages, { role: "assistant", text: respond(text) }];
     } else {
       // ── Live path: AtlasMind API ─────────────────────────────────────────
+      const t0 = Date.now();
       try {
         const res = await fetch("/api/query", {
           method: "POST",
@@ -155,15 +157,17 @@
           body: JSON.stringify({ query: text }),
         });
         const data = await res.json();
+        const elapsed = Date.now() - t0;
+        console.log('[AtlasMind] raw API response:', JSON.stringify(data, null, 2));
         if (data.error) {
           messages = [
             ...messages,
-            { role: "assistant", text: `**Error:** ${data.error}` },
+            { role: "assistant", text: `**Error:** ${data.error}`, elapsed },
           ];
         } else if (data.output?.type === "jql") {
           messages = [
             ...messages,
-            { role: "assistant", type: "table", data: data.output },
+            { role: "assistant", type: "table", data: data.output, elapsed },
           ];
           chartStore.setFromResponse(data.output, text);
         } else {
@@ -172,6 +176,7 @@
             {
               role: "assistant",
               text: data.output?.answer ?? data.output ?? "(no output)",
+              elapsed,
             },
           ];
         }
@@ -181,6 +186,7 @@
           {
             role: "assistant",
             text: `**Could not reach backend.**\nStart the API server from AtlasMind-frontendUI/:\n\n  uv run main.py\n\n${err.message}`,
+            elapsed: Date.now() - t0,
           },
         ];
       }
@@ -289,6 +295,15 @@
               {@html renderText(msg.text)}
             {/if}
           </div>
+          {#if msg.role === 'assistant' && msg.elapsed != null}
+            <div class="msg-elapsed">
+              <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+                <circle cx="5" cy="5" r="4" stroke="currentColor" stroke-width="1.2"/>
+                <path d="M5 3v2.5l1.5 1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+              {msg.elapsed < 1000 ? `${msg.elapsed}ms` : `${(msg.elapsed / 1000).toFixed(1)}s`}
+            </div>
+          {/if}
         </div>
       {/each}
 
@@ -483,6 +498,16 @@
     background: #0f1e32;
     border: 1px solid #1e293b;
     border-top-left-radius: 3px;
+  }
+
+  .msg-elapsed {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+    font-size: 9px;
+    color: #334155;
+    letter-spacing: 0.03em;
   }
 
   .msg-user .msg-bubble {
