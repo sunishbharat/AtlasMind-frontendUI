@@ -1,84 +1,80 @@
-<script>
-  import { onMount } from 'svelte'
-  import { STATUS_STYLE } from '../data.js'
-  import { dataStore } from '../dataStore.svelte.js'
-  import { vizState } from '../state.svelte.js'
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { STATUS_STYLE } from '../data.js';
+  import { dataStore } from '../dataStore.svelte.js';
+  import { vizState } from '../state.svelte.js';
 
-  // ── Adjacency map — recomputed whenever connections change ────────────────
-  const adj = $derived.by(() => {
-    const map = {}
+  // - Adjacency map - recomputed whenever connections change ------------------
+  const adj = $derived.by((): Record<string, string[]> => {
+    const map: Record<string, string[]> = {};
     for (const { from, to } of dataStore.connections) {
-      ;(map[from] ??= []).push(to)
-      ;(map[to] ??= []).push(from)
+      (map[from] ??= []).push(to);
+      (map[to]   ??= []).push(from);
     }
-    return map
-  })
+    return map;
+  });
 
-  // ── DOM refs & positions ──────────────────────────────────────────────────
-  let containerEl
-  const nodeEls = {}
-  let positions = $state({})
-  let svgW = $state(0)
-  let svgH = $state(0)
+  // - DOM refs and positions --------------------------------------------------
+  let containerEl: HTMLDivElement;
+  const nodeEls: Record<string, HTMLButtonElement> = {};
+  interface NodePos { left: number; right: number; cy: number }
+  let positions = $state<Record<string, NodePos>>({});
+  let svgW = $state(0);
+  let svgH = $state(0);
 
-  function ref(el, id) {
-    nodeEls[id] = el
-    return { destroy() { delete nodeEls[id] } }
+  function ref(el: HTMLButtonElement, id: string) {
+    nodeEls[id] = el;
+    return { destroy() { delete nodeEls[id]; } };
   }
 
-  function computePositions() {
-    if (!containerEl) return
-    const cr = containerEl.getBoundingClientRect()
-    const p = {}
+  function computePositions(): void {
+    if (!containerEl) return;
+    const cr = containerEl.getBoundingClientRect();
+    const p: Record<string, NodePos> = {};
     for (const [id, el] of Object.entries(nodeEls)) {
-      if (!el) continue
-      const r = el.getBoundingClientRect()
-      p[id] = {
-        left:  r.left  - cr.left,
-        right: r.right - cr.left,
-        cy:    r.top   - cr.top + r.height / 2,
-      }
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      p[id] = { left: r.left - cr.left, right: r.right - cr.left, cy: r.top - cr.top + r.height / 2 };
     }
-    positions = p
-    svgW = containerEl.offsetWidth
-    svgH = containerEl.offsetHeight
+    positions = p;
+    svgW = containerEl.offsetWidth;
+    svgH = containerEl.offsetHeight;
   }
 
   onMount(() => {
-    requestAnimationFrame(computePositions)
-    const ro = new ResizeObserver(computePositions)
-    ro.observe(containerEl)
-    return () => ro.disconnect()
-  })
+    requestAnimationFrame(computePositions);
+    const ro = new ResizeObserver(computePositions);
+    ro.observe(containerEl);
+    return () => ro.disconnect();
+  });
 
   // Recompute positions when data changes (CSV upload swaps cards)
   $effect(() => {
-    dataStore.epics; dataStore.stories; dataStore.subtasks
-    requestAnimationFrame(computePositions)
-  })
+    dataStore.epics; dataStore.stories; dataStore.subtasks;
+    requestAnimationFrame(computePositions);
+  });
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  function isRelated(id) {
-    const h = vizState.hoveredId
-    if (!h) return false
-    return id === h || (adj[h]?.includes(id) ?? false)
+  function isRelated(id: string): boolean {
+    const h = vizState.hoveredId;
+    if (!h) return false;
+    return id === h || (adj[h]?.includes(id) ?? false);
   }
 
-  function isDimmed(id) {
-    return vizState.hoveredId !== null && !isRelated(id)
+  function isDimmed(id: string): boolean {
+    return vizState.hoveredId !== null && !isRelated(id);
   }
 
-  function isConnHL(from, to) {
-    const h = vizState.hoveredId
-    if (!h) return false
-    return from === h || to === h
+  function isConnHL(from: string, to: string): boolean {
+    const h = vizState.hoveredId;
+    if (!h) return false;
+    return from === h || to === h;
   }
 
-  function pathD(from, to) {
-    const a = positions[from], b = positions[to]
-    if (!a || !b) return null
-    const mx = (a.right + b.left) / 2
-    return `M${a.right},${a.cy} C${mx},${a.cy} ${mx},${b.cy} ${b.left},${b.cy}`
+  function pathD(from: string, to: string): string | null {
+    const a = positions[from], b = positions[to];
+    if (!a || !b) return null;
+    const mx = (a.right + b.left) / 2;
+    return `M${a.right},${a.cy} C${mx},${a.cy} ${mx},${b.cy} ${b.left},${b.cy}`;
   }
 </script>
 

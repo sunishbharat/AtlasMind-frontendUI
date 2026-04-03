@@ -1,4 +1,5 @@
-<script>
+<script lang="ts">
+  import type { ComponentType } from 'svelte';
   import HierarchyView from "./views/HierarchyView.svelte";
   import TableView from "./views/TableView.svelte";
   import ChatPanel from "./ChatPanel.svelte";
@@ -7,8 +8,16 @@
   import { vizState } from "./state.svelte.js";
   import { ChartView, chartStore } from "./charts/index.js";
 
-  // ── View registry ─────────────────────────────────────────────────────────
-  const VIEWS = [
+  interface ViewDef {
+    id: string;
+    label: string;
+    description: string;
+    icon: string;
+    component: ComponentType;
+  }
+
+  // - View registry -----------------------------------------------------------
+  const VIEWS: ViewDef[] = [
     {
       id: "hierarchy",
       label: "Hierarchy Map",
@@ -35,9 +44,9 @@
     // { id: 'workload', label: 'Workload',        description: 'Story points by assignee',            icon: '◫', component: WorkloadView  },
   ];
 
-  // ── Multiselect view state ────────────────────────────────────────────────
-  let chatOpen = $state(false);
-  let selectedIds = $state(new Set(["hierarchy"]));
+  // - Multiselect view state --------------------------------------------------
+  let chatOpen     = $state(false);
+  let selectedIds  = $state(new Set<string>(["hierarchy"]));
   let dropdownOpen = $state(false);
 
   const activeViews = $derived(VIEWS.filter((v) => selectedIds.has(v.id)));
@@ -50,7 +59,7 @@
     activeViews.length === 1 ? activeViews[0].icon : "⊞",
   );
 
-  function toggleView(id) {
+  function toggleView(id: string): void {
     const next = new Set(selectedIds);
     if (next.has(id)) {
       if (next.size === 1) return;
@@ -59,30 +68,30 @@
     selectedIds = next;
   }
 
-  function removeView(id) {
+  function removeView(id: string): void {
     if (selectedIds.size === 1) return;
     const next = new Set(selectedIds);
     next.delete(id);
     selectedIds = next;
   }
 
-  function onWindowClick(e) {
-    if (!e.target.closest(".view-selector")) dropdownOpen = false;
+  function onWindowClick(e: MouseEvent): void {
+    if (!(e.target as Element).closest(".view-selector")) dropdownOpen = false;
   }
 
-  // ── Auto-switch to chart view when AI results arrive ─────────────────────
+  // Auto-switch to chart view when AI results arrive
   $effect(() => {
     if (chartStore.hasData) {
       selectedIds = new Set(["chart"]);
     }
   });
 
-  // ── CSV upload ────────────────────────────────────────────────────────────
-  let fileInput;
+  // - CSV upload --------------------------------------------------------------
+  let fileInput: HTMLInputElement;
   let uploading = $state(false);
 
-  async function onFileChange(e) {
-    const file = e.target.files?.[0];
+  async function onFileChange(e: Event): Promise<void> {
+    const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) return;
     uploading = true;
     await dataStore.loadCSV(file);
@@ -90,7 +99,7 @@
     fileInput.value = "";
   }
 
-  // ── Sprint stats (reactive) ───────────────────────────────────────────────
+  // - Sprint stats (reactive) -------------------------------------------------
   const allItems = $derived([
     ...dataStore.epics,
     ...dataStore.stories,
@@ -321,6 +330,7 @@
               role="option"
               aria-selected={active}
               onclick={() => toggleView(view.id)}
+              onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleView(view.id)}
             >
               <span class="checkbox" class:checked={active}>
                 {#if active}
@@ -374,6 +384,7 @@
     <div class="content-col">
       <div class="views-grid" style="--cols:{activeViews.length}">
         {#each activeViews as view (view.id)}
+          {@const Component = view.component}
           <div class="view-pane" class:multi={activeViews.length > 1}>
             {#if activeViews.length > 1}
               <div class="pane-bar">
@@ -396,7 +407,7 @@
               </div>
             {/if}
             <div class="pane-content">
-              <svelte:component this={view.component} />
+              <Component />
             </div>
           </div>
         {/each}

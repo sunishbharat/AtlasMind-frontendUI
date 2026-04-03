@@ -1,41 +1,35 @@
-<script>
-  /**
-   * ChartView.svelte
-   * Split-panel view: chart (top/left) + AI results table (bottom/right).
-   * Draggable divider resizes the split ratio.
-   * Layout toggle switches between vertical and horizontal orientation.
-   */
+<script lang="ts">
+  // Split-panel view: chart (top/left) + AI results table (bottom/right).
+  // Draggable divider resizes the split ratio.
+  // Layout toggle switches between vertical and horizontal orientation.
+  import type { ApiIssue } from './chartStore.svelte.js';
+  import type { SpecEntry } from './specBuilder.js';
   import { chartStore } from './chartStore.svelte.js';
   import { buildAllSpecs, fromExplicitSpec } from './specBuilder.js';
   import { features } from '../features.svelte.js';
   import ChartRenderer from './ChartRenderer.svelte';
   import AIHierarchyView from './AIHierarchyView.svelte';
 
-  // ── Table data ────────────────────────────────────────────────────────────
+  // - Table data ---------------------------------------------------------------
   const issues        = $derived(chartStore.issues ?? []);
   const displayFields = $derived(chartStore.data?.display_fields ?? []);
   const hasTable      = $derived(issues.length > 0);
 
-  // ── Table filters ─────────────────────────────────────────────────────────
-  // Case-insensitive date field name set
+  // - Filters ------------------------------------------------------------------
   const DATE_KEYS = new Set(['created', 'resolutiondate', 'updated', 'duedate', 'resolutionDate', 'createdDate']);
 
-  function isDateLike(key, sample) {
-    return DATE_KEYS.has(key)
-      || DATE_KEYS.has(key.toLowerCase())
-      || /^\d{4}-\d{2}-\d{2}/.test(String(sample ?? ''));
+  function isDateLike(key: string, sample: unknown): boolean {
+    return DATE_KEYS.has(key) || DATE_KEYS.has(key.toLowerCase()) || /^\d{4}-\d{2}-\d{2}/.test(String(sample ?? ''));
   }
 
-  // Returns YYYY-MM-DD string — safe to sort lexicographically, safe to parse
-  function toDateKey(str) {
+  function toDateKey(str: string): string | null {
     try {
       const d = new Date(str);
       return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
     } catch { return null; }
   }
 
-  // Formats any YYYY-MM-DD string for display; returns value unchanged if not a date key
-  function fmtDateKey(key) {
+  function fmtDateKey(key: string): string {
     if (!key || key === 'Not set') return key ?? 'Not set';
     const m = key.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!m) return key;
@@ -43,59 +37,56 @@
     return new Date(y, mo - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
-  // Map of fieldKey → { values: string[], isDate: bool }
-  const filterableMap = $derived.by(() => {
-    const map = {};
+  interface FilterInfo { values: string[]; isDate: boolean }
+
+  const filterableMap = $derived.by((): Record<string, FilterInfo> => {
+    const map: Record<string, FilterInfo> = {};
     if (!issues.length) return map;
     for (const key of displayFields) {
       const sample  = issues.find(i => i[key] != null)?.[key];
       const dateCol = isDateLike(key, sample);
-
-      const keys = issues.map(i => {
+      const keys    = issues.map(i => {
         const v = i[key];
         if (v == null || v === '') return 'Not set';
         if (dateCol) return toDateKey(String(v)) ?? 'Not set';
         return String(v);
       });
-
       const values = [...new Set(keys)].sort((a, b) => {
         if (a === 'Not set') return 1;
         if (b === 'Not set') return -1;
-        return a.localeCompare(b);   // YYYY-MM-DD sorts correctly as string
+        return a.localeCompare(b);
       });
-
       if (values.length >= 2) map[key] = { values, isDate: dateCol };
     }
     return map;
   });
 
-  // activeFilters: { fieldKey: Set<string> } — absent or empty = no filter
-  let activeFilters  = $state({});
-  let openFilter     = $state(null);   // column key of open dropdown
-  let filterSearch   = $state('');     // search text inside open dropdown
+  let activeFilters = $state<Record<string, Set<string>>>({});
+  let openFilter    = $state<string | null>(null);
+  let filterSearch  = $state('');
 
-  const filteredIssues = $derived.by(() => {
+  const filteredIssues = $derived.by((): ApiIssue[] => {
     const active = Object.entries(activeFilters).filter(([, s]) => s.size > 0);
     if (!active.length) return issues;
     return issues.filter(issue =>
       active.every(([key, vals]) => {
         const info = filterableMap[key];
         const raw  = issue[key];
-        let val;
+        let val: string;
         if (raw == null || raw === '') val = 'Not set';
         else if (info?.isDate) val = toDateKey(String(raw)) ?? 'Not set';
         else val = String(raw);
         return vals.has(val);
-      })
+      }),
     );
   });
 
   const hasActiveFilters = $derived(Object.values(activeFilters).some(s => s.size > 0));
 
-  // ── Chart specs (declared after filteredIssues so it can reference it) ───
+  // - Chart specs --------------------------------------------------------------
   let reactToFilters = $state(false);
 
-  const specs = $derived.by(() => {
+  const specs = $derived.by((): Record<string, SpecEntry> => {
     const src = reactToFilters && hasActiveFilters ? filteredIssues : issues;
     if (chartStore.chartSpec) {
       const opt = fromExplicitSpec(chartStore.chartSpec, features.charts.animation);
@@ -108,10 +99,9 @@
 
   const tabKeys = $derived(Object.keys(specs));
 
-  let activeTab = $state(null);
+  let activeTab = $state<string | null>(null);
   $effect(() => {
     if (!tabKeys.length) return;
-    // Only reset when the active tab no longer exists (new query) or nothing is selected yet
     if (!activeTab || !tabKeys.includes(activeTab)) {
       const preferred = tabKeys.find(k => k.startsWith(features.charts.defaultType));
       activeTab = preferred ?? tabKeys[0];
@@ -120,29 +110,29 @@
 
   const currentOption = $derived(activeTab ? specs[activeTab]?.option ?? {} : {});
 
-  function openDropdown(col) {
-    openFilter = openFilter === col ? null : col;
+  function openDropdown(col: string): void {
+    openFilter   = openFilter === col ? null : col;
     filterSearch = '';
   }
 
-  function toggleFilterValue(field, value) {
+  function toggleFilterValue(field: string, value: string): void {
     const next = new Set(activeFilters[field] ?? []);
     next.has(value) ? next.delete(value) : next.add(value);
     activeFilters = { ...activeFilters, [field]: next };
   }
 
-  function clearColumnFilter(field) {
+  function clearColumnFilter(field: string): void {
     const { [field]: _, ...rest } = activeFilters;
     activeFilters = rest;
   }
 
-  function clearAllFilters() { activeFilters = {}; }
+  function clearAllFilters(): void { activeFilters = {}; }
 
-  // ── Column sort ───────────────────────────────────────────────────────────
-  let sortCol = $state(null);   // field key or 'key' | 'summary'
-  let sortDir = $state('asc');  // 'asc' | 'desc'
+  // - Column sort --------------------------------------------------------------
+  let sortCol = $state<string | null>(null);
+  let sortDir = $state<'asc' | 'desc'>('asc');
 
-  function toggleSort(col) {
+  function toggleSort(col: string): void {
     if (sortCol === col) {
       sortDir = sortDir === 'asc' ? 'desc' : 'asc';
     } else {
@@ -151,75 +141,65 @@
     }
   }
 
-  const sortedIssues = $derived.by(() => {
+  const sortedIssues = $derived.by((): ApiIssue[] => {
     if (!sortCol) return filteredIssues;
+    const col = sortCol;
     return [...filteredIssues].sort((a, b) => {
-      const info = filterableMap[sortCol];
-      let av = a[sortCol] ?? '';
-      let bv = b[sortCol] ?? '';
-      // Date columns: compare as timestamps
-      if (info?.isDate || isDateLike(sortCol, av)) {
-        const ad = av ? new Date(av).getTime() : 0;
-        const bd = bv ? new Date(bv).getTime() : 0;
+      const info = filterableMap[col];
+      const av   = a[col] ?? '';
+      const bv   = b[col] ?? '';
+      if (info?.isDate || isDateLike(col, av)) {
+        const ad = av ? new Date(String(av)).getTime() : 0;
+        const bd = bv ? new Date(String(bv)).getTime() : 0;
         return sortDir === 'asc' ? ad - bd : bd - ad;
       }
-      // Numeric columns
       const an = Number(av), bn = Number(bv);
       if (!isNaN(an) && !isNaN(bn)) return sortDir === 'asc' ? an - bn : bn - an;
-      // String columns
       const cmp = String(av).localeCompare(String(bv));
       return sortDir === 'asc' ? cmp : -cmp;
     });
   });
 
-  // ── Table view mode ───────────────────────────────────────────────────────
-  let tableMode = $state('table'); // 'table' | 'hierarchy'
+  let tableMode = $state<'table' | 'hierarchy'>('table');
 
-  // Close dropdown on outside click
   $effect(() => {
-    function onDoc(e) { if (!e.target.closest('.cv-col-filter')) openFilter = null; }
+    function onDoc(e: MouseEvent) { if (!(e.target as Element).closest('.cv-col-filter')) openFilter = null; }
     document.addEventListener('click', onDoc);
     return () => document.removeEventListener('click', onDoc);
   });
 
-  // ── Layout state ──────────────────────────────────────────────────────────
-  // 'vertical'  → chart on top,  table on bottom
-  // 'horizontal'→ chart on left, table on right
-  let layout    = $state('vertical');
-  let splitPct  = $state(55);          // % given to the chart pane
+  // - Layout state -------------------------------------------------------------
+  let layout    = $state<'vertical' | 'horizontal'>('vertical');
+  let splitPct  = $state(55);
+  let container = $state<HTMLDivElement | undefined>(undefined);
+  let dragging  = $state(false);
 
-  // ── Drag-to-resize ────────────────────────────────────────────────────────
-  let container;
-  let dragging = $state(false);
-
-  function onDividerDown(e) {
+  function onDividerDown(e: MouseEvent): void {
     e.preventDefault();
     dragging = true;
 
-    function onMove(ev) {
+    function onMove(ev: MouseEvent): void {
       if (!container) return;
       const rect = container.getBoundingClientRect();
       if (layout === 'vertical') {
-        const pct = ((ev.clientY - rect.top) / rect.height) * 100;
-        splitPct = Math.min(80, Math.max(20, pct));
+        splitPct = Math.min(80, Math.max(20, ((ev.clientY - rect.top)  / rect.height) * 100));
       } else {
-        const pct = ((ev.clientX - rect.left) / rect.width) * 100;
-        splitPct = Math.min(80, Math.max(20, pct));
+        splitPct = Math.min(80, Math.max(20, ((ev.clientX - rect.left) / rect.width)  * 100));
       }
     }
 
-    function onUp() {
+    function onUp(): void {
       dragging = false;
       window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('mouseup',   onUp);
     }
 
     window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    window.addEventListener('mouseup',   onUp);
   }
 
-  function toggleLayout() {
-    layout = layout === 'vertical' ? 'horizontal' : 'vertical';
+  function toggleLayout(): void {
+    layout   = layout === 'vertical' ? 'horizontal' : 'vertical';
     splitPct = 55;
   }
 </script>
@@ -328,15 +308,20 @@
       </div>
 
       <!-- Draggable divider -->
-      <div
+      <button
+        type="button"
         class="cv-divider"
         class:cv-divider--h={layout === 'horizontal'}
-        role="separator"
-        aria-orientation={layout === 'vertical' ? 'horizontal' : 'vertical'}
+        aria-label="Resize panels"
         onmousedown={onDividerDown}
+        onkeydown={(e) => {
+          const step = 5;
+          if (e.key === 'ArrowUp'   || e.key === 'ArrowLeft')  splitPct = Math.max(20, splitPct - step);
+          if (e.key === 'ArrowDown' || e.key === 'ArrowRight') splitPct = Math.min(80, splitPct + step);
+        }}
       >
         <span class="cv-divider-dots"></span>
-      </div>
+      </button>
 
       <!-- Table pane -->
       <div class="cv-pane cv-pane--table">
@@ -561,7 +546,7 @@
   }
 
   .chart-view.dragging { user-select: none; cursor: row-resize; }
-  .chart-view.dragging.cv-split--h { cursor: col-resize; }
+  .chart-view.dragging:has(.cv-split--h) { cursor: col-resize; }
 
   /* ── Header ──────────────────────────────────────────────────────────────── */
   .cv-header {
@@ -732,6 +717,7 @@
 
   /* ── Divider ─────────────────────────────────────────────────────────────── */
   .cv-divider {
+    all: unset;
     flex-shrink: 0;
     height: 6px;
     background: transparent;

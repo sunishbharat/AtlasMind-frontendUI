@@ -1,51 +1,35 @@
-<script>
-  /**
-   * ChartPanel.svelte
-   * Smart chart panel — placed after a table message in ChatPanel.
-   * Reads feature flags, builds all available specs from issues,
-   * renders a tab-switcher + ChartRenderer.
-   *
-   * Props:
-   *   data  — the full server response object (data.output from /api/query)
-   *           Expected shape: { issues: [...], answer, jql, ... }
-   *           OR { chartSpec: { type, title, categories, values } }
-   */
+<script lang="ts">
+  // Smart chart panel - placed after a table message in ChatPanel.
+  // Reads feature flags, builds all available specs from issues,
+  // and renders a tab-switcher + ChartRenderer.
+  import type { QueryResponse } from './chartStore.svelte.js';
+  import type { SpecEntry } from './specBuilder.js';
   import { features } from '../features.svelte.js';
   import { buildAllSpecs, fromExplicitSpec } from './specBuilder.js';
   import ChartRenderer from './ChartRenderer.svelte';
 
-  let { data = {} } = $props();
+  let { data = {} as QueryResponse }: { data?: QueryResponse } = $props();
 
-  // ── Build specs whenever data changes ────────────────────────────────────
-  const specs = $derived.by(() => {
+  const specs = $derived.by((): Record<string, SpecEntry> => {
     if (!features.charts.enabled || !features.charts.autoDerive) return {};
-
-    // Explicit chartSpec from server takes priority
     if (data.chartSpec) {
       const opt = fromExplicitSpec(data.chartSpec, features.charts.animation);
       return opt ? { explicit: { label: data.chartSpec.title ?? 'Chart', icon: data.chartSpec.type ?? 'bar', option: opt } } : {};
     }
-
-    return buildAllSpecs(
-      data.issues ?? [],
-      features.charts.maxItems,
-      features.charts.animation,
-    );
+    return buildAllSpecs(data.issues ?? [], features.charts.maxItems, features.charts.animation);
   });
 
-  const tabKeys = $derived(Object.keys(specs));
+  const tabKeys   = $derived(Object.keys(specs));
   const hasCharts = $derived(tabKeys.length > 0);
 
-  let activeTab = $state(null);
-  let expanded = $state(false);   // panel open/closed
+  let activeTab = $state<string | null>(null);
+  let expanded  = $state(false);
 
-  // Set default tab when specs change (e.g. new message)
   $effect(() => {
     if (tabKeys.length) {
-      // Prefer the defaultType tab, fallback to first
       const preferred = tabKeys.find(k => k.startsWith(features.charts.defaultType));
       activeTab = preferred ?? tabKeys[0];
-      expanded = true;
+      expanded  = true;
     }
   });
 

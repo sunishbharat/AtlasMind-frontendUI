@@ -1,48 +1,56 @@
-<script>
-  import { STATUS_STYLE } from '../data.js'
-  import { dataStore } from '../dataStore.svelte.js'
-  import { vizState } from '../state.svelte.js'
+<script lang="ts">
+  import type { IssueStatus } from '../data.js';
+  import { STATUS_STYLE } from '../data.js';
+  import { dataStore } from '../dataStore.svelte.js';
+  import { vizState } from '../state.svelte.js';
 
-  const TYPE_STYLE = {
-    Epic:       { label: 'Epic',     color: '#818cf8', bg: 'rgba(129,140,248,0.12)' },
-    Story:      { label: 'Story',    color: '#38bdf8', bg: 'rgba(56,189,248,0.12)'  },
+  interface TypeStyle { label: string; color: string; bg: string }
+
+  const TYPE_STYLE: Record<string, TypeStyle> = {
+    'Epic':     { label: 'Epic',     color: '#818cf8', bg: 'rgba(129,140,248,0.12)' },
+    'Story':    { label: 'Story',    color: '#38bdf8', bg: 'rgba(56,189,248,0.12)'  },
     'Sub-task': { label: 'Sub-task', color: '#2dd4bf', bg: 'rgba(45,212,191,0.12)'  },
-  }
+  };
 
-  // Adjacency for dimming — recomputed on data change
-  const adj = $derived.by(() => {
-    const map = {}
+  // Adjacency for dimming - recomputed on data change
+  const adj = $derived.by((): Record<string, string[]> => {
+    const map: Record<string, string[]> = {};
     for (const { from, to } of dataStore.connections) {
-      ;(map[from] ??= []).push(to)
-      ;(map[to] ??= []).push(from)
+      (map[from] ??= []).push(to);
+      (map[to]   ??= []).push(from);
     }
-    return map
-  })
+    return map;
+  });
 
-  function isRelated(id) {
-    const h = vizState.hoveredId
-    if (!h) return false
-    return id === h || (adj[h]?.includes(id) ?? false)
+  function isRelated(id: string): boolean {
+    const h = vizState.hoveredId;
+    if (!h) return false;
+    return id === h || (adj[h]?.includes(id) ?? false);
   }
 
-  function isDimmed(id) {
-    return vizState.hoveredId !== null && !isRelated(id)
+  function isDimmed(id: string): boolean {
+    return vizState.hoveredId !== null && !isRelated(id);
   }
 
-  // Build hierarchical row order — recomputed on data change
-  const tableRows = $derived.by(() => {
-    const rows = []
+  interface TableRow {
+    id: string; title: string; status: IssueStatus; points: number;
+    assignee: string; type: string; parent: string | null; indent: number;
+  }
+
+  // Build hierarchical row order - recomputed on data change
+  const tableRows = $derived.by((): TableRow[] => {
+    const rows: TableRow[] = [];
     for (const epic of dataStore.epics) {
-      rows.push({ ...epic, type: 'Epic', parent: null, indent: 0 })
+      rows.push({ ...epic, type: 'Epic', parent: null, indent: 0 });
       for (const story of dataStore.stories.filter(s => s.epicId === epic.id)) {
-        rows.push({ ...story, type: 'Story', parent: epic.id, indent: 1 })
+        rows.push({ ...story, type: 'Story', parent: epic.id, indent: 1 });
         for (const st of dataStore.subtasks.filter(s => s.storyId === story.id)) {
-          rows.push({ ...st, type: 'Sub-task', parent: story.id, indent: 2 })
+          rows.push({ ...st, type: 'Sub-task', parent: story.id, indent: 2 });
         }
       }
     }
-    return rows
-  })
+    return rows;
+  });
 </script>
 
 <div class="table-view">

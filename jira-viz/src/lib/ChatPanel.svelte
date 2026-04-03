@@ -1,30 +1,37 @@
-<script>
+<script lang="ts">
+  import type { QueryResponse } from "./charts/chartStore.svelte.js";
   import { dataStore } from "./dataStore.svelte.js";
   import { chartStore } from "./charts/index.js";
 
-  let { open = false } = $props();
+  let { open = false }: { open?: boolean } = $props();
 
-  // ── Message state ─────────────────────────────────────────────────────────
-  let messages = $state([
+  interface Message {
+    role: 'user' | 'assistant';
+    text?: string;
+    type?: string;
+    data?: QueryResponse;
+    raw?: boolean;
+  }
+
+  let messages = $state<Message[]>([
     {
       role: "assistant",
-      text: "Hi! I can answer questions about your sprint data — try asking about epics, assignees, story points, or issue status.",
+      text: "Hi! I can answer questions about your sprint data - try asking about epics, assignees, story points, or issue status.",
     },
   ]);
 
-  let query = $state("");
+  let query   = $state("");
   let loading = $state(false);
   let liveMode = $state(window.location.pathname.startsWith("/live"));
-  let listEl; // scroll container
+  let listEl: HTMLDivElement;
 
-  // ── Auto-scroll on new messages ───────────────────────────────────────────
   $effect(() => {
     messages;
     if (listEl) setTimeout(() => (listEl.scrollTop = listEl.scrollHeight), 30);
   });
 
-  // ── Mock data-aware responses ─────────────────────────────────────────────
-  function respond(q) {
+  // - Mock data-aware responses (demo mode only) ------------------------------
+  function respond(q: string): string {
     const t = q.toLowerCase();
     const all = [
       ...dataStore.epics,
@@ -126,8 +133,8 @@
     return `I can help with sprint data. Try:\n• "Show in progress issues"\n• "Who is assigned what?"\n• "How many story points remain?"\n• "Give me an overview"`;
   }
 
-  // ── Send ──────────────────────────────────────────────────────────────────
-  async function send() {
+  // - Send --------------------------------------------------------------------
+  async function send(): Promise<void> {
     const text = query.trim();
     if (!text || loading) return;
 
@@ -182,15 +189,14 @@
     loading = false;
   }
 
-  function onKeydown(e) {
+  function onKeydown(e: KeyboardEvent): void {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       send();
     }
   }
 
-  // ── Dynamic result summary ────────────────────────────────────────────────
-  function summariseResult(data) {
+  function summariseResult(data: QueryResponse): string {
     if (data.answer) return data.answer;
     const issues = data.issues ?? [];
     if (!issues.length) return "Query executed.";
@@ -220,8 +226,8 @@
     return `Found ${countStr}. By ${groupField}: ${top}. Chart updated on the left.`;
   }
 
-  // ── Markdown-lite renderer (bold + newlines only) ─────────────────────────
-  function renderText(text) {
+  // Markdown-lite renderer (bold + newlines only)
+  function renderText(text: string): string {
     return text
       .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
       .replace(/\n/g, "<br>");
@@ -471,114 +477,6 @@
     margin: 0;
     color: #94a3b8;
     line-height: 1.5;
-  }
-
-  /* ── Table response ─────────────────────────────────────────────────────── */
-  .msg-bubble--table {
-    max-width: min(560px, 88vw);
-    padding: 8px 10px;
-  }
-
-  .result-answer {
-    margin: 0 0 10px;
-    font-size: 13px;
-    line-height: 1.5;
-  }
-
-  .result-meta {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin-bottom: 7px;
-    flex-wrap: wrap;
-  }
-
-  .result-count {
-    font-size: 10px;
-    font-weight: 700;
-    color: #818cf8;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .result-jql {
-    font-family: "Consolas", monospace;
-    font-size: 9.5px;
-    color: #475569;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 340px;
-    display: block;
-  }
-
-  .result-table-wrap {
-    overflow-x: auto;
-    border: 1px solid #1e293b;
-    border-radius: 5px;
-    scrollbar-width: thin;
-    scrollbar-color: #1e293b transparent;
-  }
-
-  .result-table {
-    border-collapse: collapse;
-    font-size: 10px;
-    width: 100%;
-    white-space: nowrap;
-  }
-
-  .result-table thead tr {
-    background: #0f172a;
-  }
-
-  .result-table th {
-    padding: 5px 9px;
-    text-align: left;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: #334155;
-    border-bottom: 1px solid #1e293b;
-  }
-
-  .result-table td {
-    padding: 5px 9px;
-    color: #94a3b8;
-    border-bottom: 1px solid #0f172a;
-    vertical-align: middle;
-  }
-
-  .result-table tbody tr:last-child td {
-    border-bottom: none;
-  }
-  .result-table tbody tr:hover td {
-    background: rgba(255, 255, 255, 0.02);
-  }
-
-  .cell-key a {
-    color: #818cf8;
-    text-decoration: none;
-    font-weight: 700;
-    font-family: "Consolas", monospace;
-    font-size: 10px;
-  }
-  .cell-key a:hover {
-    text-decoration: underline;
-  }
-
-  .cell-summary {
-    max-width: 180px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: #cbd5e1;
-  }
-
-  .result-filters {
-    margin-top: 6px;
-    font-size: 9.5px;
-    color: #475569;
-    font-style: italic;
   }
 
   .msg-assistant .msg-bubble {

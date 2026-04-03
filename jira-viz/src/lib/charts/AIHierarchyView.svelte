@@ -1,60 +1,54 @@
-<script>
-  /**
-   * AIHierarchyView.svelte
-   * Hierarchy map for AI query results — mirrors HierarchyView.svelte visually
-   * but takes an `issues` array prop instead of reading from dataStore.
-   *
-   * Props:
-   *   issues        — array of Jira issue objects from chartStore
-   *   jiraBaseUrl   — optional base URL for issue links
-   */
+<script lang="ts">
+  // Hierarchy map for AI query results - mirrors HierarchyView.svelte visually
+  // but takes an `issues` array prop instead of reading from dataStore.
   import { onMount } from 'svelte';
+  import type { ApiIssue } from './chartStore.svelte.js';
 
-  let { issues = [], jiraBaseUrl = '' } = $props();
+  let { issues = [] as ApiIssue[], jiraBaseUrl = '' }: { issues?: ApiIssue[]; jiraBaseUrl?: string } = $props();
 
-  // ── Status colour ─────────────────────────────────────────────────────────
-  const STATUS_COLOR = {
+  interface StyleEntry { color: string; bg: string }
+
+  const STATUS_COLOR: Record<string, StyleEntry> = {
     'to do':       { color: '#64748b', bg: 'rgba(100,116,139,0.08)' },
     'open':        { color: '#64748b', bg: 'rgba(100,116,139,0.08)' },
     'backlog':     { color: '#64748b', bg: 'rgba(100,116,139,0.08)' },
-    'in progress': { color: '#60a5fa', bg: 'rgba(96,165,250,0.08)' },
+    'in progress': { color: '#60a5fa', bg: 'rgba(96,165,250,0.08)'  },
     'in review':   { color: '#818cf8', bg: 'rgba(129,140,248,0.08)' },
-    'done':        { color: '#34d399', bg: 'rgba(52,211,153,0.08)' },
-    'closed':      { color: '#34d399', bg: 'rgba(52,211,153,0.08)' },
-    'resolved':    { color: '#34d399', bg: 'rgba(52,211,153,0.08)' },
+    'done':        { color: '#34d399', bg: 'rgba(52,211,153,0.08)'  },
+    'closed':      { color: '#34d399', bg: 'rgba(52,211,153,0.08)'  },
+    'resolved':    { color: '#34d399', bg: 'rgba(52,211,153,0.08)'  },
     'blocked':     { color: '#f87171', bg: 'rgba(248,113,113,0.08)' },
   };
 
-  function statusStyle(status = '') {
+  function statusStyle(status = ''): StyleEntry {
     return STATUS_COLOR[status.toLowerCase()] ?? { color: '#818cf8', bg: 'rgba(129,140,248,0.08)' };
   }
 
-  // ── Build columns from unique issuetypes in the data ─────────────────────
+  // - Columns from unique issuetypes in the data ------------------------------
   const columns = $derived.by(() => {
-    const typeMap = new Map(); // preserves insertion order = server order
+    const typeMap = new Map<string, ApiIssue[]>();
     for (const issue of issues) {
-      const t = issue.issuetype ?? issue.type ?? 'Unknown';
+      const t = String(issue.issuetype ?? issue.type ?? 'Unknown');
       if (!typeMap.has(t)) typeMap.set(t, []);
-      typeMap.get(t).push(issue);
+      typeMap.get(t)!.push(issue);
     }
     return [...typeMap.entries()].map(([label, items]) => ({ label, items }));
   });
 
-  // ── Connections: any issue whose parent exists in the dataset ─────────────
+  // - Connections: issues whose parent exists in the dataset ------------------
   const connections = $derived.by(() => {
     const allKeys = new Set(issues.map(i => i.key));
-    const conns = [];
+    const conns: { from: string; to: string }[] = [];
     for (const issue of issues) {
-      const parentKey = issue.epic_link ?? issue.epic_key ?? issue.parent;
+      const parentKey = String(issue.epic_link ?? issue.epic_key ?? issue.parent ?? '');
       if (parentKey && allKeys.has(parentKey))
-        conns.push({ from: parentKey, to: issue.key });
+        conns.push({ from: parentKey, to: String(issue.key) });
     }
     return conns;
   });
 
-  // ── Adjacency map for hover highlighting ──────────────────────────────────
-  const adj = $derived.by(() => {
-    const m = {};
+  const adj = $derived.by((): Record<string, string[]> => {
+    const m: Record<string, string[]> = {};
     for (const { from, to } of connections) {
       (m[from] ??= []).push(to);
       (m[to]   ??= []).push(from);
@@ -62,34 +56,34 @@
     return m;
   });
 
-  // ── Hover state ───────────────────────────────────────────────────────────
-  let hoveredId = $state(null);
+  let hoveredId = $state<string | null>(null);
 
-  function isRelated(id) {
+  function isRelated(id: string): boolean {
     if (!hoveredId) return false;
     return id === hoveredId || (adj[hoveredId]?.includes(id) ?? false);
   }
-  function isDimmed(id) { return hoveredId !== null && !isRelated(id); }
-  function isConnHL(from, to) {
+  function isDimmed(id: string): boolean   { return hoveredId !== null && !isRelated(id); }
+  function isConnHL(from: string, to: string): boolean {
     return hoveredId !== null && (from === hoveredId || to === hoveredId);
   }
 
-  // ── SVG bezier connections ────────────────────────────────────────────────
-  let containerEl;
-  const nodeEls = {};
-  let positions = $state({});
+  // - SVG bezier connections --------------------------------------------------
+  let containerEl: HTMLDivElement;
+  const nodeEls: Record<string, HTMLButtonElement> = {};
+  interface NodePos { left: number; right: number; cy: number }
+  let positions = $state<Record<string, NodePos>>({});
   let svgW = $state(0);
   let svgH = $state(0);
 
-  function ref(el, id) {
+  function ref(el: HTMLButtonElement, id: string) {
     nodeEls[id] = el;
     return { destroy() { delete nodeEls[id]; } };
   }
 
-  function computePositions() {
+  function computePositions(): void {
     if (!containerEl) return;
     const cr = containerEl.getBoundingClientRect();
-    const p  = {};
+    const p: Record<string, NodePos> = {};
     for (const [id, el] of Object.entries(nodeEls)) {
       if (!el) continue;
       const r = el.getBoundingClientRect();
@@ -112,15 +106,15 @@
     requestAnimationFrame(computePositions);
   });
 
-  function pathD(from, to) {
+  function pathD(from: string, to: string): string | null {
     const a = positions[from], b = positions[to];
     if (!a || !b) return null;
     const mx = (a.right + b.left) / 2;
     return `M${a.right},${a.cy} C${mx},${a.cy} ${mx},${b.cy} ${b.left},${b.cy}`;
   }
 
-  function pts(issue) {
-    return issue.story_points ?? issue.points ?? issue['story points'] ?? null;
+  function pts(issue: ApiIssue): number | null {
+    return (issue.story_points ?? issue.points ?? issue['story points'] ?? null) as number | null;
   }
 </script>
 
@@ -221,11 +215,6 @@
     color: #818cf8;
     background: rgba(129,140,248,0.1);
     padding: 1px 5px; border-radius: 999px;
-  }
-
-  .col-empty {
-    font-size: 10.5px; color: #1e293b;
-    padding: 8px 4px;
   }
 
   .card {

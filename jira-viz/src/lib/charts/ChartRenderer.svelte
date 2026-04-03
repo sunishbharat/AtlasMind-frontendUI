@@ -1,31 +1,20 @@
-<script>
-  /**
-   * ChartRenderer.svelte
-   * Raw ECharts wrapper — accepts an `option` prop and renders a canvas chart.
-   * Handles: init, resize (ResizeObserver), option reactivity, dispose.
-   * No data logic here — keep this dumb.
-   */
-  import { onMount, onDestroy } from 'svelte';
+<script lang="ts">
+  // Raw ECharts wrapper - accepts an `option` prop and renders a canvas chart.
+  // Handles: init, resize (ResizeObserver), option reactivity, dispose.
+  import { onMount } from 'svelte';
+  import type { EChartsOption } from 'echarts';
+  import type { EChartsType } from 'echarts/core';
   import * as echarts from 'echarts/core';
   import { BarChart, PieChart, LineChart } from 'echarts/charts';
-  import {
-    GridComponent,
-    TooltipComponent,
-    TitleComponent,
-    LegendComponent,
-  } from 'echarts/components';
+  import { GridComponent, TooltipComponent, TitleComponent, LegendComponent } from 'echarts/components';
   import { CanvasRenderer } from 'echarts/renderers';
 
-  echarts.use([
-    BarChart, PieChart, LineChart,
-    GridComponent, TooltipComponent, TitleComponent, LegendComponent,
-    CanvasRenderer,
-  ]);
+  echarts.use([BarChart, PieChart, LineChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
 
-  let { option = {}, height = '220px' } = $props();
+  let { option = {} as EChartsOption, height = '220px' }: { option?: EChartsOption; height?: string } = $props();
 
-  let container;
-  let chart;
+  let container: HTMLDivElement;
+  let chart: EChartsType | undefined;
 
   onMount(() => {
     chart = echarts.init(container, null, { renderer: 'canvas' });
@@ -37,11 +26,10 @@
     return () => {
       ro.disconnect();
       chart?.dispose();
-      chart = null;
+      chart = undefined;
     };
   });
 
-  // Re-apply option whenever it changes
   $effect(() => {
     if (chart && option) {
       chart.setOption(option, { notMerge: true, lazyUpdate: false });
