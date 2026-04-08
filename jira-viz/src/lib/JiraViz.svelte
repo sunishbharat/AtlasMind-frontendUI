@@ -448,6 +448,8 @@
   </div>
 </div>
 
+<div class="build-badge">Built {new Date(__BUILD_TIME__).toLocaleString()}</div>
+
 <style>
   /* ── Shell ──────────────────────────────────────────────────────────────── */
   .shell {
@@ -556,6 +558,18 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: #334155;
+  }
+
+  .build-badge {
+    position: fixed;
+    bottom: 6px;
+    left: 10px;
+    font-size: 9px;
+    color: #ffffff;
+    opacity: 0.5;
+    letter-spacing: 0.02em;
+    pointer-events: none;
+    z-index: 9999;
   }
 
   .brand-progress {

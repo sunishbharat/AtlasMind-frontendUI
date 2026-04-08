@@ -15,6 +15,22 @@
   const displayFields = $derived(chartStore.data?.display_fields ?? []);
   const hasTable      = $derived(issues.length > 0);
 
+  // - Cell formatter -----------------------------------------------------------
+  function fmtCell(col: string, val: unknown): string {
+    if (val == null || val === '') return '—';
+    if (Array.isArray(val)) {
+      if (val.length === 0) return '—';
+      if (typeof val[0] === 'object' && val[0] !== null) {
+        return col === 'comments'
+          ? `${val.length} comment${val.length !== 1 ? 's' : ''}`
+          : `${val.length} item${val.length !== 1 ? 's' : ''}`;
+      }
+      return (val as unknown[]).join(', ');
+    }
+    if (typeof val === 'object') return JSON.stringify(val);
+    return String(val);
+  }
+
   // - Filters ------------------------------------------------------------------
   const DATE_KEYS = new Set(['created', 'resolutiondate', 'updated', 'duedate', 'resolutionDate', 'createdDate']);
 
@@ -48,6 +64,7 @@
       const keys    = issues.map(i => {
         const v = i[key];
         if (v == null || v === '') return 'Not set';
+        if (Array.isArray(v)) return v.length ? fmtCell(key, v) : 'Not set';
         if (dateCol) return toDateKey(String(v)) ?? 'Not set';
         return String(v);
       });
@@ -516,7 +533,7 @@
                     </td>
                     <td class="cell-summary" title={issue.summary}>{issue.summary}</td>
                     {#each displayFields as col}
-                      <td>{issue[col] || '—'}</td>
+                      <td>{fmtCell(col, issue[col])}</td>
                     {/each}
                   </tr>
                 {/each}

@@ -4,16 +4,10 @@ AtlasMind Frontend API server.
 Bridges the Svelte UI to the AtlasMind FastAPI backend.
 Each /api/query POST translates to a GET request against the AtlasMind server:
 
-  AtlasMind server (port 8000):
-    uv run python main.py --server
-    uv run python main.py --server --host 127.0.0.1 --port 9000
-
   This server (port 8001):
-    uv run python main.py
-
-  curl examples (direct to AtlasMind):
-    curl "http://localhost:8000/query?q=list+5+bugs+in+KAFKA"
-    curl "http://localhost:8000/query?q=open+issues+in+HADOOP&limit=20&profile=work"
+    uv run main.py                        # defaults to localhost:8000
+    uv run main.py --local                # explicitly use localhost:8000
+    uv run main.py --external <public_ip> # use remote AtlasMind at given IP (port 8000)
 
 Served endpoints:
   http://localhost:8001/demo        ← app in Demo mode (no AtlasMind needed)
@@ -21,6 +15,7 @@ Served endpoints:
   http://localhost:8001/api/health  ← health check
 """
 
+import argparse
 from pathlib import Path
 
 import httpx
@@ -32,8 +27,22 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-ATLASMIND_URL = "http://localhost:8000"   # AtlasMind FastAPI server
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="AtlasMind Frontend API server")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--local", action="store_true", help="Connect to AtlasMind on localhost:8000 (default)")
+    group.add_argument("--external", metavar="IP", help="Connect to AtlasMind at the given IP address (port 8000)")
+    return parser.parse_args()
+
+_args = _parse_args()
+if _args.external:
+    ATLASMIND_URL = f"http://{_args.external}:8000"
+else:
+    ATLASMIND_URL = "http://localhost:8000"
+
 FRONTEND_PORT = 8001                       # This server's port
+
+print(f"[AtlasMind] Backend URL: {ATLASMIND_URL}")
 
 DIST_DIR = Path(__file__).parent / "jira-viz" / "dist"
 
@@ -66,6 +75,7 @@ def run_query(req: QueryRequest):
         params["profile"] = req.profile
 
     try:
+        print(f"[AtlasMind] Querying: {ATLASMIND_URL}/query  params={params}")
         with httpx.Client(timeout=120) as client:
             resp = client.get(f"{ATLASMIND_URL}/query", params=params)
             resp.raise_for_status()

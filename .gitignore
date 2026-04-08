@@ -18,6 +18,10 @@ wheels/
 .DS_Store
 Thumbs.db
 
+# Markdown (exclude all except README.md)
+*.md
+!README.md
+
 # Editor
 .vscode/*
 !.vscode/extensions.json
