@@ -1,4 +1,4 @@
-import type { Epic, Story, Subtask, AnyIssue, Connection } from './data.js';
+import type { Epic, Story, Subtask, AnyIssue, Connection, IssueStatus } from './data.js';
 import {
   epics as defaultEpics,
   stories as defaultStories,
@@ -103,6 +103,66 @@ function parseCSV(text: string): ParsedData {
   return { epics, stories, subtasks };
 }
 
+// -- API issue → hierarchy conversion -----------------------------------------
+
+/** A flat Jira issue object as returned by the AI query API. */
+type ApiIssue = Record<string, unknown>;
+
+function normalizeStatus(val: unknown): IssueStatus {
+  const s = String(val ?? '').toLowerCase();
+  if (['done', 'closed', 'resolved', 'complete', 'fixed', "won't fix", "won't do"].some(v => s.includes(v))) return 'Done';
+  if (['progress', 'review', 'development', 'testing', 'active', 'code review'].some(v => s.includes(v))) return 'In Progress';
+  return 'To Do';
+}
+
+function extractStr(val: unknown): string {
+  if (val == null) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'object') {
+    const o = val as Record<string, unknown>;
+    return String(o.displayName ?? o.name ?? o.key ?? '');
+  }
+  return String(val);
+}
+
+/** Convert a flat ApiIssue array into Epics/Stories/Subtasks + connections. */
+function apiIssuesToHierarchy(issues: ApiIssue[]): { epics: Epic[]; stories: Story[]; subtasks: Subtask[] } {
+  const epics:    Epic[]    = [];
+  const stories:  Story[]   = [];
+  const subtasks: Subtask[] = [];
+
+  for (const issue of issues) {
+    const id       = extractStr(issue.key);
+    const title    = extractStr(issue.summary);
+    const status   = normalizeStatus(issue.status);
+    const points   = Number(issue.story_points ?? issue['Story Points'] ?? 0);
+    const assignee = extractStr(issue.assignee);
+    const typeRaw  = extractStr(issue.issuetype).toLowerCase();
+
+    if (!id) continue;
+
+    if (typeRaw === 'epic') {
+      const sprint = extractStr(
+        Array.isArray(issue.Sprint) ? issue.Sprint[0] : (issue.Sprint ?? issue.sprint ?? ''),
+      );
+      // Greenhopper sprint string → extract name
+      const sprintName = sprint.match(/\bname=([^,\]]+)/)?.[1]?.trim() ?? sprint;
+      epics.push({ id, title, status, points, assignee, sprint: sprintName });
+
+    } else if (typeRaw === 'sub-task' || typeRaw === 'subtask') {
+      const storyId = extractStr(issue.parent);
+      subtasks.push({ id, title, status, points, assignee, storyId });
+
+    } else {
+      // Story, Bug, Task, Improvement, etc. — treat as Story
+      const epicId = extractStr(issue.epic_link ?? issue.epic_key ?? issue['Epic Link'] ?? issue.parent ?? '');
+      stories.push({ id, title, status, points, assignee, epicId });
+    }
+  }
+
+  return { epics, stories, subtasks };
+}
+
 class DataStore {
   epics       = $state<Epic[]>([...defaultEpics]);
   stories     = $state<Story[]>([...defaultStories]);
@@ -111,6 +171,21 @@ class DataStore {
   connections = $state<Connection[]>([...defaultConnections]);
   csvFilename = $state<string | null>(null);
   csvError    = $state<string | null>(null);
+  /** True when hierarchy data came from an AI query (not demo/CSV). */
+  fromAI      = $state<boolean>(false);
+
+  /** Load hierarchy from a flat AI issues array (overwrites demo/CSV data). */
+  setFromApiIssues(issues: ApiIssue[]): void {
+    if (!issues.length) return;
+    const { epics, stories, subtasks } = apiIssuesToHierarchy(issues);
+    const { allIssues, connections }   = buildDerived(epics, stories, subtasks);
+    this.epics       = epics;
+    this.stories     = stories;
+    this.subtasks    = subtasks;
+    this.allIssues   = allIssues;
+    this.connections = connections;
+    this.fromAI      = true;
+  }
 
   resetToSample(): void {
     this.epics       = [...defaultEpics];
@@ -121,6 +196,7 @@ class DataStore {
     this.connections = connections;
     this.csvFilename = null;
     this.csvError    = null;
+    this.fromAI      = false;
   }
 
   loadCSV(file: File): Promise<void> {

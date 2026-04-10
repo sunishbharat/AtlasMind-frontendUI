@@ -44,20 +44,11 @@
     // { id: 'workload', label: 'Workload',        description: 'Story points by assignee',            icon: '◫', component: WorkloadView  },
   ];
 
-  // - Multiselect view state --------------------------------------------------
-  let chatOpen     = $state(false);
-  let selectedIds  = $state(new Set<string>(["hierarchy"]));
-  let dropdownOpen = $state(false);
+  // - View state --------------------------------------------------------------
+  let chatOpen    = $state(false);
+  let selectedIds = $state(new Set<string>(["hierarchy"]));
 
   const activeViews = $derived(VIEWS.filter((v) => selectedIds.has(v.id)));
-  const selectorLabel = $derived(
-    activeViews.length === 1
-      ? activeViews[0].label
-      : `${activeViews.length} views`,
-  );
-  const selectorIcon = $derived(
-    activeViews.length === 1 ? activeViews[0].icon : "⊞",
-  );
 
   function toggleView(id: string): void {
     const next = new Set(selectedIds);
@@ -75,14 +66,17 @@
     selectedIds = next;
   }
 
-  function onWindowClick(e: MouseEvent): void {
-    if (!(e.target as Element).closest(".view-selector")) dropdownOpen = false;
-  }
-
   // Auto-switch to chart view when AI results arrive
   $effect(() => {
     if (chartStore.hasData) {
       selectedIds = new Set(["chart"]);
+    }
+  });
+
+  // Sync AI query issues into the hierarchy view
+  $effect(() => {
+    if (chartStore.issues.length > 0) {
+      dataStore.setFromApiIssues(chartStore.issues);
     }
   });
 
@@ -111,7 +105,7 @@
   const sprintName = $derived(dataStore.epics[0]?.sprint ?? "Sprint");
 </script>
 
-<svelte:window onclick={onWindowClick} />
+
 
 <div class="shell">
   <!-- ════════════════════════════════════════════════════════════════════════
@@ -286,80 +280,21 @@
     <span class="row-label">View</span>
     <div class="row-sep"></div>
 
-    <!-- View multiselect dropdown -->
-    <div class="view-selector">
-      <button
-        class="selector-btn"
-        class:open={dropdownOpen}
-        onclick={() => (dropdownOpen = !dropdownOpen)}
-        aria-haspopup="listbox"
-        aria-expanded={dropdownOpen}
-      >
-        <span class="selector-icon">{selectorIcon}</span>
-        <span class="selector-label">{selectorLabel}</span>
-        {#if activeViews.length > 1}
-          <span class="count-badge">{activeViews.length}</span>
-        {/if}
-        <svg
-          class="chevron"
-          class:rotated={dropdownOpen}
-          width="11"
-          height="11"
-          viewBox="0 0 12 12"
+    <!-- View tab buttons - chart view is excluded (switches automatically via AI) -->
+    <div class="view-tabs">
+      {#each VIEWS.filter(v => v.id !== 'chart') as view}
+        {@const active = selectedIds.has(view.id)}
+        <button
+          class="view-tab"
+          class:active
+          onclick={() => toggleView(view.id)}
+          title={view.description}
         >
-          <path
-            d="M2 4l4 4 4-4"
-            stroke="currentColor"
-            stroke-width="1.5"
-            fill="none"
-            stroke-linecap="round"
-          />
-        </svg>
-      </button>
-
-      {#if dropdownOpen}
-        <ul class="dropdown" role="listbox" aria-multiselectable="true">
-          <li class="dropdown-hint">Select one or more views</li>
-          {#each VIEWS as view}
-            {@const active = selectedIds.has(view.id)}
-            {@const locked = active && selectedIds.size === 1}
-            <li
-              class="dropdown-item"
-              class:active
-              class:locked
-              role="option"
-              aria-selected={active}
-              onclick={() => toggleView(view.id)}
-              onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleView(view.id)}
-            >
-              <span class="checkbox" class:checked={active}>
-                {#if active}
-                  <svg width="9" height="9" viewBox="0 0 10 10"
-                    ><path
-                      d="M1.5 5l2.5 2.5 4.5-4.5"
-                      stroke="currentColor"
-                      stroke-width="1.5"
-                      fill="none"
-                      stroke-linecap="round"
-                    /></svg
-                  >
-                {/if}
-              </span>
-              <span class="di-icon">{view.icon}</span>
-              <span class="di-text">
-                <span class="di-label">{view.label}</span>
-                <span class="di-desc">{view.description}</span>
-              </span>
-            </li>
-          {/each}
-        </ul>
-      {/if}
+          <span class="view-tab-icon">{view.icon}</span>
+          {view.label}
+        </button>
+      {/each}
     </div>
-
-    <!-- Placeholder slots for future filter dropdowns -->
-    <!-- <FilterDropdown label="Sprint" /> -->
-    <!-- <FilterDropdown label="Assignee" /> -->
-    <!-- <FilterDropdown label="Status" /> -->
 
     <button
       class="ask-ai-btn"
@@ -438,7 +373,23 @@
             </div>
           </div>
         {:else}
-          <span class="dp-hint">Hover a card to explore connections</span>
+          {#if chartStore.data?.jql}
+            <div class="dp-jql">
+              <span class="dp-jql-label">JQL</span>
+              <code class="dp-jql-code" title={chartStore.data.jql}>{chartStore.data.jql}</code>
+              {#if chartStore.data.jira_base_url}
+                <a
+                  class="dp-jql-link"
+                  href="{chartStore.data.jira_base_url}/issues/?jql={encodeURIComponent(chartStore.data.jql)}"
+                  target="_blank"
+                  rel="noopener"
+                  title="Open in Jira"
+                >↗</a>
+              {/if}
+            </div>
+          {:else}
+            <span class="dp-hint">Hover a card to explore connections</span>
+          {/if}
         {/if}
       </div>
     </div>
@@ -789,149 +740,43 @@
     border-bottom-width: 2px;
   }
 
-  .view-selector {
-    position: relative;
-  }
-
-  .selector-btn {
+  .view-tabs {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 2px;
+  }
+
+  .view-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     padding: 5px 12px;
-    background: #131e2e;
-    border: 1px solid #1e293b;
+    background: transparent;
+    border: 1px solid transparent;
     border-radius: 6px;
-    color: #e2e8f0;
-    font-size: 12.5px;
+    color: #475569;
+    font-size: 12px;
     font-weight: 500;
     cursor: pointer;
     font-family: inherit;
-    transition:
-      border-color 0.15s,
-      background 0.15s;
-    min-width: 160px;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+    white-space: nowrap;
   }
 
-  .selector-btn:hover,
-  .selector-btn.open {
-    border-color: #334155;
-    background: #1a2a42;
-  }
-
-  .selector-icon {
-    font-size: 13px;
-    color: #818cf8;
-  }
-  .selector-label {
-    flex: 1;
-    text-align: left;
-  }
-
-  .count-badge {
-    background: #818cf8;
-    color: #fff;
-    font-size: 9.5px;
-    font-weight: 700;
-    padding: 1px 6px;
-    border-radius: 999px;
-    line-height: 1.5;
-  }
-
-  .chevron {
-    color: #334155;
-    transition: transform 0.2s;
-    flex-shrink: 0;
-  }
-  .chevron.rotated {
-    transform: rotate(180deg);
-  }
-
-  .dropdown {
-    position: absolute;
-    top: calc(100% + 6px);
-    right: 0;
-    min-width: 240px;
-    background: #0f1e32;
-    border: 1px solid #1e293b;
-    border-radius: 8px;
-    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
-    list-style: none;
-    margin: 0;
-    padding: 5px;
-    z-index: 100;
-  }
-
-  .dropdown-hint {
-    font-size: 9.5px;
-    color: #334155;
-    padding: 5px 10px 7px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  .dropdown-item {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    padding: 8px 9px;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: background 0.12s;
-    user-select: none;
-  }
-
-  .dropdown-item:hover:not(.locked) {
+  .view-tab:hover {
+    color: #94a3b8;
     background: rgba(255, 255, 255, 0.04);
   }
-  .dropdown-item.active {
-    background: rgba(129, 140, 248, 0.07);
-  }
-  .dropdown-item.locked {
-    opacity: 0.35;
-    cursor: not-allowed;
-  }
 
-  .checkbox {
-    width: 15px;
-    height: 15px;
-    border-radius: 3px;
-    border: 1.5px solid #1e293b;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition:
-      background 0.12s,
-      border-color 0.12s;
-  }
-
-  .checkbox.checked {
-    background: #818cf8;
-    border-color: #818cf8;
-    color: #fff;
-  }
-
-  .di-icon {
-    font-size: 14px;
-    color: #818cf8;
-    width: 18px;
-    text-align: center;
-    flex-shrink: 0;
-  }
-  .di-text {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    flex: 1;
-  }
-  .di-label {
-    font-size: 12.5px;
-    font-weight: 500;
+  .view-tab.active {
     color: #e2e8f0;
+    background: rgba(129, 140, 248, 0.1);
+    border-color: rgba(129, 140, 248, 0.2);
   }
-  .di-desc {
-    font-size: 10px;
-    color: #334155;
+
+  .view-tab-icon {
+    font-size: 13px;
+    color: #818cf8;
   }
 
   /* ── Ask AI button ──────────────────────────────────────────────────────── */
@@ -1109,4 +954,37 @@
     color: #1e293b;
     font-style: italic;
   }
+
+  .dp-jql {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+    width: 100%;
+  }
+  .dp-jql-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #475569;
+    flex-shrink: 0;
+  }
+  .dp-jql-code {
+    font-family: 'Consolas', monospace;
+    font-size: 11px;
+    color: #94a3b8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+  .dp-jql-link {
+    font-size: 12px;
+    color: #818cf8;
+    text-decoration: none;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+  .dp-jql-link:hover { text-decoration: underline; }
 </style>

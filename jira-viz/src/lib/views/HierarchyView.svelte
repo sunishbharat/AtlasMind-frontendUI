@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { STATUS_STYLE } from '../data.js';
   import { dataStore } from '../dataStore.svelte.js';
+  import { chartStore } from '../charts/index.js';
   import { vizState } from '../state.svelte.js';
 
   // - Adjacency map - recomputed whenever connections change ------------------
@@ -98,6 +99,19 @@
     {/each}
   </svg>
 
+  <!-- AI source badge -->
+  {#if dataStore.fromAI && chartStore.query}
+    <div class="ai-source">
+      <svg width="10" height="10" viewBox="0 0 14 14" fill="none" style="flex-shrink:0">
+        <circle cx="7" cy="7" r="6" stroke="#818cf8" stroke-width="1.3"/>
+        <path d="M4.5 5.5C4.5 4.12 5.62 3 7 3s2.5 1.12 2.5 2.5c0 1.2-.8 2.2-1.9 2.45V9h-1.2V7.95C5.3 7.7 4.5 6.7 4.5 5.5z" fill="#818cf8"/>
+        <circle cx="7" cy="11" r=".7" fill="#818cf8"/>
+      </svg>
+      <span>{chartStore.query}</span>
+      <span class="ai-count">{dataStore.epics.length + dataStore.stories.length + dataStore.subtasks.length} issues</span>
+    </div>
+  {/if}
+
   <!-- Columns -->
   <div class="cols">
 
@@ -174,7 +188,31 @@
 </div>
 
 <style>
-  .hierarchy { position: relative; flex: 1; }
+  .hierarchy { position: relative; flex: 1; overflow-y: auto; }
+
+  .ai-source {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 16px;
+    font-size: 10px;
+    color: #64748b;
+    background: rgba(129, 140, 248, 0.05);
+    border-bottom: 1px solid rgba(129, 140, 248, 0.1);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ai-source span { overflow: hidden; text-overflow: ellipsis; }
+  .ai-count {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-weight: 700;
+    color: #818cf8;
+    background: rgba(129, 140, 248, 0.1);
+    padding: 1px 6px;
+    border-radius: 999px;
+  }
 
   .overlay {
     position: absolute; top: 0; left: 0;

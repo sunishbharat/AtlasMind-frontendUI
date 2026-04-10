@@ -5,7 +5,7 @@
   import type { ApiIssue } from './chartStore.svelte.js';
   import type { SpecEntry } from './specBuilder.js';
   import { chartStore } from './chartStore.svelte.js';
-  import { buildAllSpecs, fromExplicitSpec } from './specBuilder.js';
+  import { buildAllSpecs, fromExplicitSpec, buildGroupedCategorical, buildGroupedTrend, autoDetectGroupField } from './specBuilder.js';
   import { features } from '../features.svelte.js';
   import ChartRenderer from './ChartRenderer.svelte';
   import AIHierarchyView from './AIHierarchyView.svelte';
@@ -15,15 +15,75 @@
   const displayFields = $derived(chartStore.data?.display_fields ?? []);
   const hasTable      = $derived(issues.length > 0);
 
+  // Columns to render beyond the fixed Key + Summary columns.
+  // Backend display_fields may include "Key"/"Summary" which are already fixed.
+  const FIXED_COLS = new Set(['key', 'Key', 'summary', 'Summary']);
+  const tableDisplayFields = $derived(displayFields.filter(c => !FIXED_COLS.has(c)));
+
+  // - Field resolver -----------------------------------------------------------
+  // display_fields contain display names (e.g. "Assignee", "Resolved", "Story Points")
+  // but standard issue fields are snake_case (assignee, resolutiondate, story_points).
+  // Intent fields (e.g. "Story Points") are stored as-is in the issue object.
+  const DISPLAY_ALIASES: Record<string, string> = {
+    'resolved':         'resolutiondate',
+    'resolution_date':  'resolutiondate',
+    'due_date':         'duedate',
+    'issue_type':       'issuetype',
+    'epic_link':        'epic_link',
+    'level_of_effort':  'effort_days',
+    'effort':           'effort_days',
+  };
+
+  function resolveIssueField(issue: ApiIssue, displayName: string): unknown {
+    // 1. Exact match - handles intent fields like "Story Points"
+    if (displayName in issue) return issue[displayName];
+    // 2. Lowercase match - handles "Summary" → "summary", "Assignee" → "assignee"
+    const lower = displayName.toLowerCase();
+    if (lower in issue) return issue[lower];
+    // 3. Snake_case - handles "Story Points" → "story_points" if not stored as intent field
+    const snake = lower.replace(/ /g, '_');
+    if (snake in issue) return issue[snake];
+    // 4. Hardcoded aliases for fields whose display name differs from the issue key
+    const alias = DISPLAY_ALIASES[snake] ?? DISPLAY_ALIASES[lower];
+    if (alias && alias in issue) return issue[alias];
+    return undefined;
+  }
+
   // - Cell formatter -----------------------------------------------------------
+  /** Extract a display string from any Jira field value, including Greenhopper sprint strings. */
+  function fmtJiraValue(val: unknown): string {
+    if (val == null || val === '') return '—';
+    if (typeof val === 'string') {
+      // Greenhopper sprint toString: "...Sprint@...[...name=Sprint Name,...]"
+      if (val.includes('com.atlassian.greenhopper') || val.includes('Sprint@')) {
+        const m = val.match(/\bname=([^,\]]+)/);
+        if (m) return m[1].trim();
+      }
+      return val;
+    }
+    if (typeof val === 'object' && !Array.isArray(val)) {
+      const obj = val as Record<string, unknown>;
+      if ('name' in obj)        return String(obj.name);
+      if ('displayName' in obj) return String(obj.displayName);
+      if ('value' in obj)       return String(obj.value);
+      return JSON.stringify(val);
+    }
+    return String(val);
+  }
+
   function fmtCell(col: string, val: unknown): string {
     if (val == null || val === '') return '—';
     if (Array.isArray(val)) {
       if (val.length === 0) return '—';
-      if (typeof val[0] === 'object' && val[0] !== null) {
+      // Sprint-like arrays: each element is a string or object — extract names
+      const first = val[0];
+      if (typeof first === 'string' && (first.includes('com.atlassian.greenhopper') || first.includes('Sprint@'))) {
+        return val.map(v => fmtJiraValue(v)).join(', ');
+      }
+      if (typeof first === 'object' && first !== null) {
         return col === 'comments'
           ? `${val.length} comment${val.length !== 1 ? 's' : ''}`
-          : `${val.length} item${val.length !== 1 ? 's' : ''}`;
+          : val.map(v => fmtJiraValue(v)).join(', ');
       }
       return (val as unknown[]).join(', ');
     }
@@ -59,10 +119,10 @@
     const map: Record<string, FilterInfo> = {};
     if (!issues.length) return map;
     for (const key of displayFields) {
-      const sample  = issues.find(i => i[key] != null)?.[key];
+      const sample  = resolveIssueField(issues.find(i => resolveIssueField(i, key) != null) ?? {}, key);
       const dateCol = isDateLike(key, sample);
       const keys    = issues.map(i => {
-        const v = i[key];
+        const v = resolveIssueField(i, key);
         if (v == null || v === '') return 'Not set';
         if (Array.isArray(v)) return v.length ? fmtCell(key, v) : 'Not set';
         if (dateCol) return toDateKey(String(v)) ?? 'Not set';
@@ -88,7 +148,7 @@
     return issues.filter(issue =>
       active.every(([key, vals]) => {
         const info = filterableMap[key];
-        const raw  = issue[key];
+        const raw  = resolveIssueField(issue, key);
         let val: string;
         if (raw == null || raw === '') val = 'Not set';
         else if (info?.isDate) val = toDateKey(String(raw)) ?? 'Not set';
@@ -103,13 +163,32 @@
   // - Chart specs --------------------------------------------------------------
   let reactToFilters = $state(false);
 
+  const LINE_INTENT_RE = /\b(multi.?line|line\s+chart|multiline|trend\s+by|over\s+time\s+by)\b/i;
+
   const specs = $derived.by((): Record<string, SpecEntry> => {
+    // Auto charts always built from the full (or filtered) issue set
     const src  = reactToFilters && hasActiveFilters ? filteredIssues : issues;
     const auto = buildAllSpecs(src, features.charts.maxItems, features.charts.animation);
+
     if (chartStore.chartSpec) {
+      // Backend provided an explicit spec — show it first, keep all auto tabs
       const opt = fromExplicitSpec(chartStore.chartSpec, issues, features.charts.animation);
-      if (opt) return { explicit: { label: chartStore.chartSpec.title ?? 'Chart', icon: chartStore.chartSpec.type ?? 'bar', option: opt }, ...auto };
+      if (opt) return { explicit: { label: chartStore.chartSpec.title || 'Chart', icon: chartStore.chartSpec.type || 'bar', option: opt }, ...auto };
+    } else if (issues.length && LINE_INTENT_RE.test(chartStore.query)) {
+      // Backend omitted chart_spec but query asks for a line/multiline chart —
+      // auto-detect x and group fields from the actual issue data
+      const groupField = autoDetectGroupField(issues, []);
+      if (groupField) {
+        const xField = autoDetectGroupField(issues, [groupField]) ?? Object.keys(issues[0] ?? {}).find(k => k !== groupField) ?? '';
+        console.warn('[ChartView] chart_spec null, line intent — xField:', xField, 'groupField:', groupField);
+        const opt = buildGroupedCategorical(issues, xField, groupField, 'count', 'line',
+          `Issues by ${xField} / ${groupField}`, features.charts.animation);
+        // Prepend the line chart tab; all auto tabs remain
+        if (opt) return { explicit: { label: `By ${xField} / ${groupField}`, icon: 'line', option: opt }, ...auto };
+      }
     }
+
+    // No explicit chart — return all auto tabs as-is
     return auto;
   });
 
@@ -162,8 +241,8 @@
     const col = sortCol;
     return [...filteredIssues].sort((a, b) => {
       const info = filterableMap[col];
-      const av   = a[col] ?? '';
-      const bv   = b[col] ?? '';
+      const av   = resolveIssueField(a, col) ?? '';
+      const bv   = resolveIssueField(b, col) ?? '';
       if (info?.isDate || isDateLike(col, av)) {
         const ad = av ? new Date(String(av)).getTime() : 0;
         const bd = bv ? new Date(String(bv)).getTime() : 0;
@@ -232,7 +311,11 @@
           <circle cx="7" cy="11" r=".7" fill="#818cf8"/>
         </svg>
         <span class="cv-query-text">{chartStore.query}</span>
-        <span class="cv-count">{issues.length} issues</span>
+        {#if chartStore.noResults}
+          <span class="cv-no-results">No results — showing previous data</span>
+        {:else}
+          <span class="cv-count">{issues.length} issues</span>
+        {/if}
       {/if}
 
       <!-- Layout toggle -->
@@ -436,7 +519,7 @@
                       <span class="sort-icon">{sortCol === 'summary' ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}</span>
                     </div>
                   </th>
-                  {#each displayFields as col}
+                  {#each tableDisplayFields as col}
                     {@const colInfo   = filterableMap[col]}
                     {@const colFilter = activeFilters[col]}
                     {@const isFiltered = (colFilter?.size ?? 0) > 0}
@@ -498,7 +581,7 @@
                                     <span class="col-filter-val">{fmtDateKey(val)}</span>
                                     <span class="col-filter-count">
                                       {issues.filter(i => {
-                                        const raw = i[col];
+                                        const raw = resolveIssueField(i, col);
                                         const v = (raw == null || raw === '') ? 'Not set'
                                           : colInfo.isDate ? (toDateKey(String(raw)) ?? 'Not set')
                                           : String(raw);
@@ -532,8 +615,8 @@
                       {/if}
                     </td>
                     <td class="cell-summary" title={issue.summary}>{issue.summary}</td>
-                    {#each displayFields as col}
-                      <td>{fmtCell(col, issue[col])}</td>
+                    {#each tableDisplayFields as col}
+                      <td>{fmtCell(col, resolveIssueField(issue, col))}</td>
                     {/each}
                   </tr>
                 {/each}
@@ -604,6 +687,16 @@
     background: rgba(129, 140, 248, 0.1);
     padding: 2px 7px;
     border-radius: 999px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .cv-no-results {
+    font-size: 10px;
+    color: #f59e0b;
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    border-radius: 4px;
+    padding: 1px 6px;
     flex-shrink: 0;
     white-space: nowrap;
   }
