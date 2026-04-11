@@ -9,13 +9,21 @@ Each /api/query POST translates to a GET request against the AtlasMind server:
     uv run main.py --local                # explicitly use localhost:8000
     uv run main.py --external <public_ip> # use remote AtlasMind at given IP (port 8000)
 
+  Environment variables (take precedence over CLI flags):
+    ATLASMIND_URL   - full URL of the AtlasMind backend (e.g. http://10.0.0.5:8000)
+    ALLOWED_ORIGINS - comma-separated list of allowed CORS origins
+                      (e.g. https://yourdomain.com,https://www.yourdomain.com)
+    HOST            - bind address (default: 127.0.0.1; set to 0.0.0.0 in containers)
+    PORT            - port to listen on (default: 8001)
+
 Served endpoints:
-  http://localhost:8001/demo        ← app in Demo mode (no AtlasMind needed)
-  http://localhost:8001/live        ← app in Live mode (queries forwarded to AtlasMind)
-  http://localhost:8001/api/health  ← health check
+  http://localhost:8001/demo        <- app in Demo mode (no AtlasMind needed)
+  http://localhost:8001/live        <- app in Live mode (queries forwarded to AtlasMind)
+  http://localhost:8001/api/health  <- health check
 """
 
 import argparse
+import os
 from pathlib import Path
 
 import httpx
@@ -35,14 +43,26 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 _args = _parse_args()
-if _args.external:
+
+# ATLASMIND_URL env var takes precedence; CLI flags are the fallback for local dev
+if os.environ.get("ATLASMIND_URL"):
+    ATLASMIND_URL = os.environ["ATLASMIND_URL"]
+elif _args.external:
     ATLASMIND_URL = f"http://{_args.external}:8000"
 else:
     ATLASMIND_URL = "http://localhost:8000"
 
-FRONTEND_PORT = 8001                       # This server's port
+# Bind host: default to 127.0.0.1 locally; containers should set HOST=0.0.0.0
+HOST = os.environ.get("HOST", "127.0.0.1")
+FRONTEND_PORT = int(os.environ.get("PORT", 8001))
 
-print(f"[AtlasMind] Backend URL: {ATLASMIND_URL}")
+# CORS origins: default to localhost dev server; override in production
+_raw_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
+print(f"[AtlasMind] Backend URL  : {ATLASMIND_URL}")
+print(f"[AtlasMind] Listening on : {HOST}:{FRONTEND_PORT}")
+print(f"[AtlasMind] CORS origins : {ALLOWED_ORIGINS}")
 
 DIST_DIR = Path(__file__).parent / "jira-viz" / "dist"
 
@@ -51,7 +71,7 @@ app = FastAPI(title="AtlasMind Frontend API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
@@ -146,4 +166,4 @@ if DIST_DIR.exists():
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=FRONTEND_PORT, reload=False)
+    uvicorn.run(app, host=HOST, port=FRONTEND_PORT, reload=False)
