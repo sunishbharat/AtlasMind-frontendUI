@@ -17,7 +17,7 @@
   let messages = $state<Message[]>([
     {
       role: "assistant",
-      text: "Hi! I can answer questions about your sprint data - try asking about epics, assignees, story points, or issue status.",
+      text: "Ask me anything — from your work data to everyday questions, I'm here to help.",
     },
   ]);
 

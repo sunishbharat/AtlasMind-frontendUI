@@ -24,7 +24,12 @@ Served endpoints:
 
 import argparse
 import os
+import sys
 from pathlib import Path
+
+# Ensure the directory containing main.py is on sys.path so that
+# `config` is importable regardless of working directory or container setup.
+sys.path.insert(0, str(Path(__file__).parent))
 
 import httpx
 import uvicorn
