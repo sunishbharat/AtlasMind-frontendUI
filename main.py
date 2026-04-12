@@ -34,12 +34,21 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from config.defaults import (
+    ATLASMIND_BACKEND_HOST,
+    ATLASMIND_BACKEND_PORT,
+    FRONTEND_HOST as _DEFAULT_HOST,
+    FRONTEND_PORT  as _DEFAULT_PORT,
+    VITE_DEV_HOST,
+    VITE_DEV_PORT,
+)
+
 # ── Config ─────────────────────────────────────────────────────────────────────
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="AtlasMind Frontend API server")
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--local", action="store_true", help="Connect to AtlasMind on localhost:8000 (default)")
-    group.add_argument("--external", metavar="IP", help="Connect to AtlasMind at the given IP address (port 8000)")
+    group.add_argument("--local", action="store_true", help=f"Connect to AtlasMind on {ATLASMIND_BACKEND_HOST}:{ATLASMIND_BACKEND_PORT} (default)")
+    group.add_argument("--external", metavar="IP", help=f"Connect to AtlasMind at the given IP address (port {ATLASMIND_BACKEND_PORT})")
     return parser.parse_args()
 
 _args = _parse_args()
@@ -48,16 +57,17 @@ _args = _parse_args()
 if os.environ.get("ATLASMIND_URL"):
     ATLASMIND_URL = os.environ["ATLASMIND_URL"]
 elif _args.external:
-    ATLASMIND_URL = f"http://{_args.external}:8000"
+    ATLASMIND_URL = f"http://{_args.external}:{ATLASMIND_BACKEND_PORT}"
 else:
-    ATLASMIND_URL = "http://localhost:8000"
+    ATLASMIND_URL = f"http://{ATLASMIND_BACKEND_HOST}:{ATLASMIND_BACKEND_PORT}"
 
-# Bind host: default to 127.0.0.1 locally; containers should set HOST=0.0.0.0
-HOST = os.environ.get("HOST", "127.0.0.1")
-FRONTEND_PORT = int(os.environ.get("PORT", 8001))
+# Bind host: default to config value; containers should set HOST=0.0.0.0
+HOST = os.environ.get("HOST", _DEFAULT_HOST)
+FRONTEND_PORT = int(os.environ.get("PORT", _DEFAULT_PORT))
 
-# CORS origins: default to localhost dev server; override in production
-_raw_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+# CORS origins: default to Vite dev server; override in production
+_default_origins = f"http://{VITE_DEV_HOST}:{VITE_DEV_PORT},http://127.0.0.1:{VITE_DEV_PORT}"
+_raw_origins = os.environ.get("ALLOWED_ORIGINS", _default_origins)
 ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
 print(f"[AtlasMind] Backend URL  : {ATLASMIND_URL}")
@@ -111,10 +121,7 @@ def run_query(req: QueryRequest):
     except httpx.ConnectError:
         return {
             "output": None,
-            "error": (
-                f"Cannot connect to AtlasMind server at {ATLASMIND_URL}.\n"
-                "Start it with:\n\n  uv run python main.py --server"
-            ),
+            "error": "Backend not reachable — switch to Demo mode to explore your sprint data offline.",
         }
     except httpx.TimeoutException:
         return {"output": None, "error": "AtlasMind server timed out (120 s)."}
@@ -122,6 +129,18 @@ def run_query(req: QueryRequest):
         return {"output": None, "error": f"AtlasMind returned {exc.response.status_code}: {exc.response.text}"}
     except Exception as exc:
         return {"output": None, "error": str(exc)}
+
+
+@app.get("/api/meta")
+def meta():
+    """Return server metadata (model name, etc.) from AtlasMind."""
+    try:
+        with httpx.Client(timeout=5) as client:
+            resp = client.get(f"{ATLASMIND_URL}/meta")
+            resp.raise_for_status()
+            return resp.json()
+    except Exception:
+        return {}
 
 
 @app.get("/api/health")

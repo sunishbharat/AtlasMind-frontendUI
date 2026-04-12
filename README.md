@@ -133,6 +133,35 @@ find resolved issues that took more than 5 days
 
 ---
 
+## Routing overrides
+
+The query router automatically classifies each query as JQL or general. If the router misclassifies a query, you can force the route by appending a flag:
+
+| Flag | Effect |
+|------|--------|
+| `/jql` | Forces the JQL pipeline regardless of LLM classification |
+| `/general` | Forces the general answer path, skipping the JQL pipeline |
+
+The flag is stripped from the query before it is sent to the LLM, so it does not affect the generated JQL or answer.
+
+**Examples:**
+
+```
+[atlasmind]> how many states are there in India /general
+
+  Route   : General answer
+  Answer  : What is the definition of a molecule?
+
+[atlasmind]> list issues in KAFKA /jql
+
+  Route   : JQL pipeline
+  JQL     : project = KAFKA ORDER BY created DESC
+```
+
+Overrides work across all LLM backends (Ollama and Groq).
+
+---
+
 ## Build for production
 
 ```bash

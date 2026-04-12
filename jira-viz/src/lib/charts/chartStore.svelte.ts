@@ -10,7 +10,17 @@ export interface ChartSpec {
   color_field?: string | null;
 }
 
-/** Raw server response shape for JQL queries. */
+/**
+ * Server-side metadata attached to every response.
+ * All fields are optional - new fields are added by the backend gradually.
+ * Never send this back in a request body (read-only).
+ */
+export interface ServerMeta {
+  model_name?: string | null;
+  // future fields added here without breaking existing clients
+}
+
+/** Raw server response shape. Present on both "jql" and "general" routes. */
 export interface QueryResponse {
   type: 'jql' | 'general';
   profile?: string;
@@ -25,6 +35,7 @@ export interface QueryResponse {
   chart_spec?: ChartSpec;
   chartSpec?: ChartSpec;
   filters?: Record<string, string[]>;
+  meta?: ServerMeta | null;
 }
 
 /** A single Jira issue as returned by the API (fields vary per query). */
@@ -46,9 +57,33 @@ class ChartStore {
   /** True when the last query returned 0 issues — previous chart data is still shown. */
   noResults = $state<boolean>(false);
 
+  /** Metadata from the most recent response. Updated on every response; never cleared. */
+  lastMeta = $state<ServerMeta | null>(null);
+
+  /** True when the last /api/meta poll succeeded. */
+  backendAlive = $state(false);
+
+  updateMeta(meta: ServerMeta | null | undefined): void {
+    if (meta) this.lastMeta = meta;
+    this.backendAlive = true;
+  }
+
+  clearMeta(): void {
+    this.backendAlive = false;
+    // lastMeta intentionally kept — badge stays visible but styled as offline
+  }
+
+  pollMeta(): void {
+    fetch('/api/meta')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { data?.model_name ? this.updateMeta(data) : this.clearMeta(); })
+      .catch(() => this.clearMeta());
+  }
+
   setFromResponse(responseData: QueryResponse, queryText = ''): void {
     this.data  = responseData;
     this.query = queryText;
+    this.updateMeta(responseData.meta);
 
     // backend sends chart_spec (snake_case) — handle both casings
     const raw       = (responseData as Record<string, unknown>)?.chart_spec ?? responseData?.chartSpec ?? null;

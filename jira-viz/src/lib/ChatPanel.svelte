@@ -11,7 +11,7 @@
     type?: string;
     data?: QueryResponse;
     raw?: boolean;
-    elapsed?: number;   // ms from request start to response received
+    elapsed?: number;  // ms from request start to response received
   }
 
   let messages = $state<Message[]>([
@@ -171,6 +171,7 @@
           ];
           chartStore.setFromResponse(data.output, text);
         } else {
+          chartStore.updateMeta(data.output?.meta);
           messages = [
             ...messages,
             {
@@ -257,14 +258,15 @@
       </div>
       <button
         class="mode-toggle"
-        class:live={liveMode}
-        onclick={() => (liveMode = !liveMode)}
+        class:live={liveMode && chartStore.backendAlive}
+        class:live-offline={liveMode && !chartStore.backendAlive}
+        onclick={() => { liveMode = !liveMode; if (liveMode) chartStore.pollMeta(); }}
         title={liveMode
           ? "Switch to Demo mode"
           : "Switch to Live mode (requires backend)"}
       >
         {#if liveMode}
-          <span class="mode-dot"></span>Live
+          <span class="mode-dot" class:offline={!chartStore.backendAlive}></span>Live
         {:else}
           Demo
         {/if}
@@ -420,12 +422,24 @@
     background: rgba(34, 197, 94, 0.07);
   }
 
+  .mode-toggle.live-offline {
+    color: #475569;
+    border-color: rgba(71, 85, 105, 0.3);
+    background: rgba(71, 85, 105, 0.07);
+  }
+
   .mode-dot {
     width: 5px;
     height: 5px;
     border-radius: 50%;
     background: #22c55e;
     animation: pulse-dot 2s ease-in-out infinite;
+  }
+
+  .mode-dot.offline {
+    background: #475569;
+    animation: none;
+    opacity: 0.6;
   }
 
   @keyframes pulse-dot {

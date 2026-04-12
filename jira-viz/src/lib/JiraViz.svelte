@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ComponentType } from 'svelte';
+  import Logo from "./Logo.svelte";
   import HierarchyView from "./views/HierarchyView.svelte";
   import TableView from "./views/TableView.svelte";
   import ChatPanel from "./ChatPanel.svelte";
@@ -66,6 +67,14 @@
     selectedIds = next;
   }
 
+  // Poll /api/meta every 30 s — covers both liveness and model metadata.
+  // Badge goes green when backend is up, disappears when it goes down.
+  $effect(() => {
+    chartStore.pollMeta();
+    const id = setInterval(() => chartStore.pollMeta(), 30_000);
+    return () => clearInterval(id);
+  });
+
   // Auto-switch to chart view when AI results arrive
   $effect(() => {
     if (chartStore.hasData) {
@@ -114,25 +123,13 @@
   <div class="hrow hrow-brand" aria-label="Project info">
     <div class="brand-left">
       <div class="logo">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-          <polygon
-            points="9,2 16,6 16,12 9,16 2,12 2,6"
-            stroke="#818cf8"
-            stroke-width="1.4"
-            fill="rgba(129,140,248,0.08)"
-          />
-          <polygon
-            points="9,5 13,7.5 13,11.5 9,14 5,11.5 5,7.5"
-            fill="#818cf8"
-            opacity="0.3"
-          />
-        </svg>
+        <Logo />
       </div>
       <span class="brand-tag">AtlasMind</span>
       <span class="brand-divider"></span>
       <div class="brand-title">
-        <span class="brand-sprint">{sprintName}</span>
-        <span class="brand-sub">Issue Explorer</span>
+        <span class="brand-sprint">Insight Engine</span>
+        <span class="brand-sub">From data to decisions</span>
       </div>
     </div>
 
@@ -296,21 +293,29 @@
       {/each}
     </div>
 
-    <button
-      class="ask-ai-btn"
-      class:active={chatOpen}
-      onclick={() => (chatOpen = !chatOpen)}
-    >
-      <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-        <circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.3" />
-        <path
-          d="M4.5 5.5C4.5 4.12 5.62 3 7 3s2.5 1.12 2.5 2.5c0 1.2-.8 2.2-1.9 2.45V9h-1.2V7.95C5.3 7.7 4.5 6.7 4.5 5.5z"
-          fill="currentColor"
-        />
-        <circle cx="7" cy="11" r=".7" fill="currentColor" />
-      </svg>
-      Ask AI
-    </button>
+    <div class="ai-area">
+      {#if chartStore.lastMeta?.model_name}
+        <span class="model-badge" class:offline={!chartStore.backendAlive}>
+          <span class="model-dot" class:offline={!chartStore.backendAlive}></span>
+          {chartStore.lastMeta.model_name}
+        </span>
+      {/if}
+      <button
+        class="ask-ai-btn"
+        class:active={chatOpen}
+        onclick={() => (chatOpen = !chatOpen)}
+      >
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+          <circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.3" />
+          <path
+            d="M4.5 5.5C4.5 4.12 5.62 3 7 3s2.5 1.12 2.5 2.5c0 1.2-.8 2.2-1.9 2.45V9h-1.2V7.95C5.3 7.7 4.5 6.7 4.5 5.5z"
+            fill="currentColor"
+          />
+          <circle cx="7" cy="11" r=".7" fill="currentColor" />
+        </svg>
+        Ask AI
+      </button>
+    </div>
   </div>
 
   <!-- ── Main content area (views + chat panel side by side) ───────────── -->
@@ -350,47 +355,49 @@
 
       <!-- Detail panel -->
       <div class="detail-panel">
-        {#if vizState.hoveredId}
-          {@const issue = dataStore.allIssues[vizState.hoveredId]}
-          {@const s = STATUS_STYLE[issue?.status ?? "To Do"]}
-          <div class="dp-inner">
-            <span class="dp-key">{issue.id}</span>
-            <span class="dp-title">{issue.title}</span>
-            <div class="dp-chips">
-              <span
-                class="dp-chip"
-                style="color:{s.color}; border-color:{s.color}40"
-                >{issue.status}</span
-              >
-              <span class="dp-chip">{issue.points} story pts</span>
-              <span class="dp-chip">{issue.assignee}</span>
-              {#if issue.epicId}<span class="dp-chip"
-                  >Epic: {dataStore.allIssues[issue.epicId]?.title}</span
-                >{/if}
-              {#if issue.storyId}<span class="dp-chip"
-                  >Story: {dataStore.allIssues[issue.storyId]?.title}</span
-                >{/if}
-            </div>
-          </div>
-        {:else}
-          {#if chartStore.data?.jql}
-            <div class="dp-jql">
-              <span class="dp-jql-label">JQL</span>
-              <code class="dp-jql-code" title={chartStore.data.jql}>{chartStore.data.jql}</code>
-              {#if chartStore.data.jira_base_url}
-                <a
-                  class="dp-jql-link"
-                  href="{chartStore.data.jira_base_url}/issues/?jql={encodeURIComponent(chartStore.data.jql)}"
-                  target="_blank"
-                  rel="noopener"
-                  title="Open in Jira"
-                >↗</a>
-              {/if}
+        <div class="dp-content">
+          {#if vizState.hoveredId}
+            {@const issue = dataStore.allIssues[vizState.hoveredId]}
+            {@const s = STATUS_STYLE[issue?.status ?? "To Do"]}
+            <div class="dp-inner">
+              <span class="dp-key">{issue.id}</span>
+              <span class="dp-title">{issue.title}</span>
+              <div class="dp-chips">
+                <span
+                  class="dp-chip"
+                  style="color:{s.color}; border-color:{s.color}40"
+                  >{issue.status}</span
+                >
+                <span class="dp-chip">{issue.points} story pts</span>
+                <span class="dp-chip">{issue.assignee}</span>
+                {#if issue.epicId}<span class="dp-chip"
+                    >Epic: {dataStore.allIssues[issue.epicId]?.title}</span
+                  >{/if}
+                {#if issue.storyId}<span class="dp-chip"
+                    >Story: {dataStore.allIssues[issue.storyId]?.title}</span
+                  >{/if}
+              </div>
             </div>
           {:else}
-            <span class="dp-hint">Hover a card to explore connections</span>
+            {#if chartStore.data?.jql}
+              <div class="dp-jql">
+                <span class="dp-jql-label">JQL</span>
+                <code class="dp-jql-code" title={chartStore.data.jql}>{chartStore.data.jql}</code>
+                {#if chartStore.data.jira_base_url}
+                  <a
+                    class="dp-jql-link"
+                    href="{chartStore.data.jira_base_url}/issues/?jql={encodeURIComponent(chartStore.data.jql)}"
+                    target="_blank"
+                    rel="noopener"
+                    title="Open in Jira"
+                  >↗</a>
+                {/if}
+              </div>
+            {:else}
+              <span class="dp-hint">Hover a card to explore connections</span>
+            {/if}
           {/if}
-        {/if}
+        </div>
       </div>
     </div>
 
@@ -399,7 +406,7 @@
   </div>
 </div>
 
-<div class="build-badge">Built {new Date(__BUILD_TIME__).toLocaleString()}</div>
+<span class="build-badge">Built {new Date(__BUILD_TIME__).toLocaleString()}</span>
 
 <style>
   /* ── Shell ──────────────────────────────────────────────────────────────── */
@@ -470,8 +477,9 @@
   }
 
   .brand-sprint {
-    font-size: 15px;
-    font-weight: 700;
+    font-size: 10px;
+    font-weight: 400;
+    font-style: italic;
     color: #f1f5f9;
     line-height: 1;
   }
@@ -513,14 +521,13 @@
 
   .build-badge {
     position: fixed;
-    bottom: 6px;
-    left: 10px;
+    bottom: 8px;
+    left: 12px;
     font-size: 9px;
-    color: #ffffff;
-    opacity: 0.5;
+    color: #64748b;
     letter-spacing: 0.02em;
     pointer-events: none;
-    z-index: 9999;
+    z-index: 10;
   }
 
   .brand-progress {
@@ -779,6 +786,55 @@
     color: #818cf8;
   }
 
+  /* ── Model badge + Ask AI wrapper ───────────────────────────────────────── */
+  .ai-area {
+    margin-left: auto;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  .model-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 9px;
+    font-family: "Consolas", monospace;
+    color: #22c55e;
+    background: rgba(34, 197, 94, 0.07);
+    border: 1px solid rgba(34, 197, 94, 0.25);
+    border-radius: 4px;
+    padding: 2px 7px;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+
+  .model-badge.offline {
+    color: #475569;
+    background: rgba(71, 85, 105, 0.07);
+    border-color: rgba(71, 85, 105, 0.25);
+  }
+
+  .model-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #22c55e;
+    flex-shrink: 0;
+    animation: model-pulse 2s ease-in-out infinite;
+  }
+
+  .model-dot.offline {
+    background: #475569;
+    animation: none;
+    opacity: 0.6;
+  }
+
+  @keyframes model-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.35; }
+  }
+
   /* ── Ask AI button ──────────────────────────────────────────────────────── */
   .ask-ai-btn {
     margin-left: auto;
@@ -947,6 +1003,13 @@
     border: 1px solid #1e293b;
     padding: 2px 8px;
     border-radius: 999px;
+  }
+
+  .dp-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .dp-hint {
