@@ -8,6 +8,7 @@
 import type { EChartsOption } from 'echarts';
 import type { ApiIssue, ChartSpec } from './chartStore.svelte.js';
 import { BASE_OPTION, paletteGradient, paletteColor } from './theme.js';
+import { StackedBarChart } from './StackedBarChart.js';
 
 export interface SpecEntry {
   label: string;
@@ -144,6 +145,13 @@ function extractFieldStr(val: unknown): string {
   return String(val);
 }
 
+/** True when y_field means "count issues" rather than sum a numeric field. */
+function isCountField(yField: string | null | undefined): boolean {
+  if (!yField) return true;
+  const lower = yField.toLowerCase();
+  return lower === 'count' || lower.startsWith('count ') || lower.startsWith('count of');
+}
+
 function countByField(issues: ApiIssue[], field: string): [string, number][] {
   const map: Record<string, number> = {};
   for (const issue of issues) {
@@ -193,6 +201,19 @@ export function buildBar(entries: [string, number][], title: string, maxItems = 
     },
     series: [{ type: 'bar', data: values, barMaxWidth: 44, emphasis: { itemStyle: { opacity: 0.8 } } }],
   };
+}
+
+/** Thin wrapper — delegates to StackedBarChart class. */
+export function buildStackedBar(
+  categories: string[],
+  series: { name: string; data: number[] }[],
+  title: string,
+  maxCategories = 20,
+  animation = true,
+): EChartsOption | null {
+  const chart = new StackedBarChart(title).categories(categories).animation(animation).maxCategories(maxCategories);
+  for (const s of series) chart.addSeries(s.name, s.data);
+  return chart.build();
 }
 
 export function buildPie(entries: [string, number][], title: string, maxItems = 10, animation = true): EChartsOption {
@@ -313,7 +334,7 @@ export function buildGroupedTrend(
   const series = sortedGroups.map(([groupName, groupIssues], idx) => {
     // Build ts → value map for this group
     const tsMap: Map<number, number> =
-      yField === 'count' || !yField
+      isCountField(yField)
         ? new Map(bucketByDate(groupIssues, xField, bucket).map(b => [b.ts, b.count]))
         : bucketSumByDate(groupIssues, xField, yField, bucket);
 
@@ -415,7 +436,7 @@ export function buildGroupedCategorical(
 
   const series = sortedGroups.map(([groupName, groupIssues], idx) => {
     const catMap: Map<string, number> =
-      yField === 'count' || !yField
+      isCountField(yField)
         ? new Map(countByField(groupIssues, xField))
         : new Map(sumByField(groupIssues, yField, xField));
 
@@ -478,6 +499,18 @@ export function buildGroupedCategorical(
     series,
     grid: { ...BASE_OPTION.grid as object, top: 52 },
   };
+}
+
+/** Thin wrapper — delegates to StackedBarChart.fromIssues. */
+export function buildStackedBarFromIssues(
+  issues: ApiIssue[],
+  xField: string,
+  stackField: string,
+  yField: string,
+  title: string,
+  animation = true,
+): EChartsOption | null {
+  return StackedBarChart.fromIssues(issues, xField, stackField, yField, title, animation);
 }
 
 const POINT_FIELDS = ['story_points', 'points', 'story points', 'Story Points'] as const;
@@ -582,6 +615,12 @@ export function buildAllSpecs(issues: ApiIssue[], maxItems = 20, animation = tru
     if (entries.length >= 2) {
       specs['bar_points'] = { label: 'Story Points', icon: 'bar', option: buildBar(entries, 'Story Points by Assignee', maxItems, animation) };
     }
+  }
+
+  // Stacked bar: status breakdown per assignee
+  if (issues.some(i => i.assignee) && issues.some(i => i.status)) {
+    const opt = StackedBarChart.fromIssues(issues, 'assignee', 'status', 'count', 'Status by Assignee', animation);
+    if (opt) specs['stacked_assignee_status'] = { label: 'Status × Assignee', icon: 'bar', option: opt };
   }
 
   const trendOpt = buildTrend(issues, animation);
@@ -748,7 +787,7 @@ export function buildScatter(
   console.warn('[buildScatter] no numeric points for x_field:', xField, 'y_field:', yField,
     '— check issue[0]:', { x: issues[0]?.[xField], y: issues[0]?.[yField] });
   const entries: [string, number][] =
-    yField === 'count' || !yField
+    isCountField(yField)
       ? countByField(issues, xField)
       : sumByField(issues, yField, xField);
   if (!entries.length) return null;
@@ -880,6 +919,29 @@ export function fromExplicitSpec(chartSpec: ChartSpec, issues: ApiIssue[], anima
 
   const xLower = chartSpec.x_field?.toLowerCase() ?? '';
 
+  // Stacked bar: x_field = categories, color_field = stack segments.
+  // Backend sometimes puts the stack dimension in y_field with color_field null —
+  // detect this by checking if y_field is categorical (non-numeric, non-count).
+  if (normalizedType === 'stacked_bar') {
+    const yIsCategorical = chartSpec.y_field
+      && !isCountField(chartSpec.y_field)
+      && !issues.some(i => Number(i[chartSpec.y_field!]) > 0);
+
+    const stackField = chartSpec.color_field
+      ?? (yIsCategorical ? chartSpec.y_field! : null)
+      ?? autoDetectGroupField(issues, [xLower, chartSpec.y_field ?? '']);
+
+    // If y_field was promoted to stack, count issues instead of summing
+    const valueField = (yIsCategorical || isCountField(chartSpec.y_field)) ? 'count' : (chartSpec.y_field ?? 'count');
+
+    console.warn('[fromExplicitSpec] → stacked_bar | stackField:', stackField, '| valueField:', valueField);
+    if (!stackField) return null;
+    return buildStackedBarFromIssues(
+      issues, chartSpec.x_field, stackField,
+      valueField, chartSpec.title || 'Stacked Bar', animation,
+    );
+  }
+
   // Scatter: always handled first regardless of field types
   if (normalizedType === 'scatter') {
     console.warn('[fromExplicitSpec] → scatter | colorField:', chartSpec.color_field);
@@ -935,7 +997,7 @@ export function fromExplicitSpec(chartSpec: ChartSpec, issues: ApiIssue[], anima
   console.warn('[fromExplicitSpec] → single-series fallback | type:', normalizedType);
   const title  = chartSpec.title || 'Chart';
   const entries: [string, number][] =
-    chartSpec.y_field === 'count' || !chartSpec.y_field
+    isCountField(chartSpec.y_field)
       ? countByField(issues, chartSpec.x_field)
       : sumByField(issues, chartSpec.y_field, chartSpec.x_field);
 

@@ -94,16 +94,23 @@ app.add_middleware(
 
 # ── Schema ────────────────────────────────────────────────────────────────────
 class QueryRequest(BaseModel):
-    query:   str
-    limit:   int | None = None
-    profile: str | None = None
+    query:      str
+    request_id: str | None = None  # forwarded to AtlasMind for cancel routing
+    limit:      int | None = None
+    profile:    str | None = None
+
+class EventRequest(BaseModel):
+    event:      str   # "cancel" | "heartbeat"
+    request_id: str
 
 
 # ── API routes ────────────────────────────────────────────────────────────────
 @app.post("/api/query")
-def run_query(req: QueryRequest):
+async def run_query(req: QueryRequest):
     """Translate a chat query into a GET /query call against the AtlasMind server."""
     params = {"q": req.query}
+    if req.request_id:
+        params["request_id"] = req.request_id
     if req.limit:
         params["limit"] = req.limit
     if req.profile:
@@ -112,8 +119,8 @@ def run_query(req: QueryRequest):
     # Resolve timeout from /meta so it matches the backend's LLM timeout.
     llm_timeout = 120
     try:
-        with httpx.Client(timeout=5) as meta_client:
-            meta_resp = meta_client.get(f"{ATLASMIND_URL}/meta")
+        async with httpx.AsyncClient(timeout=5) as meta_client:
+            meta_resp = await meta_client.get(f"{ATLASMIND_URL}/meta")
             if meta_resp.is_success:
                 llm_timeout = meta_resp.json().get("llm_timeout") or llm_timeout
     except Exception:
@@ -122,8 +129,8 @@ def run_query(req: QueryRequest):
 
     try:
         print(f"[AtlasMind] Querying: {ATLASMIND_URL}/query  params={params}  timeout={query_timeout}s")
-        with httpx.Client(timeout=query_timeout) as client:
-            resp = client.get(f"{ATLASMIND_URL}/query", params=params)
+        async with httpx.AsyncClient(timeout=query_timeout) as client:
+            resp = await client.get(f"{ATLASMIND_URL}/query", params=params)
             resp.raise_for_status()
 
         # AtlasMind returns JSON — pass the parsed object straight through.
@@ -147,12 +154,26 @@ def run_query(req: QueryRequest):
         return {"output": None, "error": str(exc)}
 
 
+@app.post("/api/event")
+async def forward_event(req: EventRequest):
+    """Forward a client event (cancel, heartbeat) to AtlasMind."""
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.post(f"{ATLASMIND_URL}/event", json=req.model_dump())
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.ConnectError:
+        return {"request_id": req.request_id, "accepted": False, "detail": "backend not reachable"}
+    except Exception as exc:
+        return {"request_id": req.request_id, "accepted": False, "detail": str(exc)}
+
+
 @app.get("/api/meta")
-def meta():
+async def meta():
     """Return server metadata (model name, etc.) from AtlasMind."""
     try:
-        with httpx.Client(timeout=5) as client:
-            resp = client.get(f"{ATLASMIND_URL}/meta")
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{ATLASMIND_URL}/meta")
             resp.raise_for_status()
             return resp.json()
     except Exception:
@@ -160,12 +181,12 @@ def meta():
 
 
 @app.get("/api/health")
-def health():
+async def health():
     """Check this server and whether AtlasMind is reachable."""
     atlasmind_ok = False
     try:
-        with httpx.Client(timeout=5) as client:
-            atlasmind_ok = client.get(f"{ATLASMIND_URL}/health").is_success
+        async with httpx.AsyncClient(timeout=5) as client:
+            atlasmind_ok = (await client.get(f"{ATLASMIND_URL}/health")).is_success
     except Exception:
         pass
 

@@ -2,6 +2,7 @@
   import type { QueryResponse } from "./charts/chartStore.svelte.js";
   import { dataStore } from "./dataStore.svelte.js";
   import { chartStore } from "./charts/index.js";
+  import { queryEventClient } from "./QueryEventClient.js";
 
   let { open = false }: { open?: boolean } = $props();
 
@@ -21,8 +22,10 @@
     },
   ]);
 
-  let query   = $state("");
-  let loading = $state(false);
+  let query           = $state("");
+  let loading         = $state(false);
+  let activeRequestId = $state<string | null>(null);
+  let bursting        = $state(false);
   let liveMode = $state(window.location.pathname.startsWith("/live"));
   let listEl: HTMLDivElement;
 
@@ -150,16 +153,23 @@
     } else {
       // ── Live path: AtlasMind API ─────────────────────────────────────────
       const t0 = Date.now();
+      const requestId = crypto.randomUUID();
+      activeRequestId = requestId;
       try {
         const res = await fetch("/api/query", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: text }),
+          body: JSON.stringify({ query: text, request_id: requestId }),
         });
         const data = await res.json();
         const elapsed = Date.now() - t0;
         console.log('[AtlasMind] raw API response:', JSON.stringify(data, null, 2));
-        if (data.error) {
+
+        // Cancelled by user mid-flight
+        if (data.output?.answer?.startsWith('Error: Query cancelled.') ||
+            data.error?.startsWith?.('Error: Query cancelled.')) {
+          messages = [...messages, { role: 'assistant', text: 'Query cancelled.', elapsed }];
+        } else if (data.error) {
           messages = [
             ...messages,
             { role: "assistant", text: `**Error:** ${data.error}`, elapsed },
@@ -190,10 +200,26 @@
             elapsed: Date.now() - t0,
           },
         ];
+      } finally {
+        activeRequestId = null;
       }
     }
 
     loading = false;
+  }
+
+  function handleSend(): void {
+    if (loading || !query.trim()) return;
+    bursting = true;
+    setTimeout(() => { bursting = false; }, 500);
+    send();
+  }
+
+  function cancelQuery(): void {
+    const id = activeRequestId;
+    if (!id) return;
+    // Fire-and-forget — must not await anything that blocks the event loop
+    queryEventClient.cancel(id).catch(() => {});
   }
 
   function onKeydown(e: KeyboardEvent): void {
@@ -331,19 +357,30 @@
       ></textarea>
       <button
         class="send-btn"
-        onclick={send}
-        disabled={!query.trim() || loading}
-        aria-label="Send"
+        class:is-cancel={loading && !!activeRequestId}
+        class:bursting
+        onclick={loading && activeRequestId ? cancelQuery : handleSend}
+        disabled={!loading && !query.trim()}
+        aria-label={loading && activeRequestId ? "Cancel query" : "Send"}
       >
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <path
-            d="M12 7L2 2l2.5 5L2 12l10-5z"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linejoin="round"
-            fill="none"
-          />
-        </svg>
+        <span class="burst-ring"></span>
+        <span class="burst-ring burst-ring--2"></span>
+        <span class="burst-ring burst-ring--3"></span>
+        {#if loading && activeRequestId}
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <rect x="1.5" y="1.5" width="7" height="7" rx="1" fill="currentColor" />
+          </svg>
+        {:else}
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path
+              d="M12 7L2 2l2.5 5L2 12l10-5z"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linejoin="round"
+              fill="none"
+            />
+          </svg>
+        {/if}
       </button>
     </div>
     <p class="input-hint">Enter to send · Shift+Enter for new line</p>
@@ -609,26 +646,80 @@
   .send-btn {
     all: unset;
     cursor: pointer;
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
     width: 32px;
     height: 32px;
-    border-radius: 8px;
-    background: #818cf8;
+    border-radius: 50%;
+    background: radial-gradient(circle at 38% 32%, #a5b4fc 0%, #6366f1 60%, #4f46e5 100%);
     color: #fff;
+    border: 1.5px solid #4ade80;
     flex-shrink: 0;
-    transition:
-      background 0.15s,
-      opacity 0.15s;
+    transition: transform 0.15s, opacity 0.15s, box-shadow 0.15s;
+    box-shadow: 0 0 0 0 rgba(74, 222, 128, 0);
   }
 
-  .send-btn:hover:not(:disabled) {
-    background: #6366f1;
+  .send-btn:hover:not(:disabled):not(.is-cancel) {
+    transform: scale(1.07);
+    box-shadow: 0 0 8px 2px rgba(74, 222, 128, 0.25);
   }
   .send-btn:disabled {
     opacity: 0.3;
     cursor: default;
+  }
+
+  /* Burst rings — hidden by default */
+  .burst-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 1.5px solid #4ade80;
+    opacity: 0;
+    transform: scale(1);
+    pointer-events: none;
+  }
+
+  /* Bubble pop on send */
+  .send-btn.bursting {
+    animation: bubble-pop 0.35s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+  }
+  .send-btn.bursting .burst-ring {
+    animation: burst-ring 0.5s ease-out forwards;
+  }
+  .send-btn.bursting .burst-ring--2 {
+    animation: burst-ring 0.5s ease-out 0.07s forwards;
+  }
+  .send-btn.bursting .burst-ring--3 {
+    animation: burst-ring 0.5s ease-out 0.14s forwards;
+  }
+
+  @keyframes bubble-pop {
+    0%   { transform: scale(1); }
+    25%  { transform: scale(1.22); }
+    55%  { transform: scale(0.9); }
+    80%  { transform: scale(1.06); }
+    100% { transform: scale(1); }
+  }
+
+  @keyframes burst-ring {
+    0%   { transform: scale(1);   opacity: 0.7; }
+    100% { transform: scale(2.4); opacity: 0;   }
+  }
+
+  /* Stop state — button transforms into a cancel control */
+  .send-btn.is-cancel {
+    border-radius: 8px;
+    background: rgba(248, 113, 113, 0.12);
+    color: #f87171;
+    border: 1px solid rgba(248, 113, 113, 0.25);
+    box-shadow: none;
+  }
+  .send-btn.is-cancel:hover {
+    background: rgba(248, 113, 113, 0.22);
+    color: #fca5a5;
+    transform: none;
   }
 
   .input-hint {

@@ -4,6 +4,19 @@
   import { dataStore } from '../dataStore.svelte.js';
   import { chartStore } from '../charts/index.js';
   import { vizState } from '../state.svelte.js';
+  import ChartRenderer from '../charts/ChartRenderer.svelte';
+  import { StackedBarChart } from '../charts/StackedBarChart.js';
+  import type { ApiIssue } from '../charts/chartStore.svelte.js';
+
+  // TODO: remove — temporary stacked bar demo on hierarchy view
+  const demoStackedOpt = $derived.by(() => {
+    const issues = [
+      ...dataStore.epics    as unknown as ApiIssue[],
+      ...dataStore.stories  as unknown as ApiIssue[],
+      ...dataStore.subtasks as unknown as ApiIssue[],
+    ];
+    return StackedBarChart.fromIssues(issues, 'assignee', 'status', 'count', 'Status by Assignee (demo)');
+  });
 
   // - Adjacency map - recomputed whenever connections change ------------------
   const adj = $derived.by((): Record<string, string[]> => {
@@ -185,6 +198,14 @@
     </div>
 
   </div>
+
+  <!-- TODO: remove — temporary stacked bar demo -->
+  {#if demoStackedOpt}
+    <div class="demo-stacked">
+      <div class="demo-stacked-label">Stacked Bar Demo</div>
+      <ChartRenderer option={demoStackedOpt} height="200px" />
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -265,4 +286,20 @@
   .meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
   .badge { font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; }
   .pts { font-size: 9.5px; color: #475569; background: #1e293b; padding: 1px 7px; border-radius: 999px; border: 1px solid #334155; }
+
+  /* TODO: remove — temporary stacked bar demo */
+  .demo-stacked {
+    margin: 12px 16px;
+    border: 1px dashed #1e293b;
+    border-radius: 6px;
+    padding: 8px;
+  }
+  .demo-stacked-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #334155;
+    margin-bottom: 4px;
+  }
 </style>

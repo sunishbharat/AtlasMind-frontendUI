@@ -5,13 +5,20 @@
   import type { ApiIssue } from './chartStore.svelte.js';
   import type { SpecEntry } from './specBuilder.js';
   import { chartStore } from './chartStore.svelte.js';
+  import { dataStore } from '../dataStore.svelte.js';
   import { buildAllSpecs, fromExplicitSpec, buildGroupedCategorical, buildGroupedTrend, autoDetectGroupField } from './specBuilder.js';
   import { features } from '../features.svelte.js';
   import ChartRenderer from './ChartRenderer.svelte';
   import AIHierarchyView from './AIHierarchyView.svelte';
 
   // - Table data ---------------------------------------------------------------
-  const issues        = $derived(chartStore.issues ?? []);
+  // Fall back to dataStore sample data so demo page shows charts without an AI query.
+  const fallbackIssues = $derived([
+    ...dataStore.epics    as unknown as ApiIssue[],
+    ...dataStore.stories  as unknown as ApiIssue[],
+    ...dataStore.subtasks as unknown as ApiIssue[],
+  ]);
+  const issues        = $derived(chartStore.issues.length ? chartStore.issues : fallbackIssues);
   const displayFields = $derived(chartStore.data?.display_fields ?? []);
   const hasTable      = $derived(issues.length > 0);
 

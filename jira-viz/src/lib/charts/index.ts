@@ -6,6 +6,7 @@ export { default as AIHierarchyView } from './AIHierarchyView.svelte';
 export { default as ChartRenderer }   from './ChartRenderer.svelte';
 export { default as ChartView }       from './ChartView.svelte';
 export { chartStore }                 from './chartStore.svelte.js';
-export { buildAllSpecs, buildBar, buildPie, buildTrend, buildBurndown, fromExplicitSpec, autoSpec } from './specBuilder.js';
+export { buildAllSpecs, buildBar, buildPie, buildTrend, buildBurndown, fromExplicitSpec, autoSpec, buildStackedBar, buildStackedBarFromIssues } from './specBuilder.js';
+export { StackedBarChart } from './StackedBarChart.js';
 export { PALETTE, linearGradient, paletteGradient, paletteColor, BASE_OPTION } from './theme.js';
 export { features } from '../features.svelte.js';

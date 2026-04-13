@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ComponentType } from 'svelte';
+  import type { ComponentType } from "svelte";
   import Logo from "./Logo.svelte";
   import HierarchyView from "./views/HierarchyView.svelte";
   import TableView from "./views/TableView.svelte";
@@ -46,8 +46,8 @@
   ];
 
   // - View state --------------------------------------------------------------
-  let chatOpen    = $state(false);
-  let aboutOpen   = $state(false);
+  let chatOpen = $state(false);
+  let aboutOpen = $state(false);
   let selectedIds = $state(new Set<string>(["hierarchy"]));
 
   const activeViews = $derived(VIEWS.filter((v) => selectedIds.has(v.id)));
@@ -72,7 +72,7 @@
   // Badge goes green when backend is up, disappears when it goes down.
   $effect(() => {
     chartStore.pollMeta();
-    const id = setInterval(() => chartStore.pollMeta(), 30_000);
+    const id = setInterval(() => chartStore.pollMeta(), 60_000);
     return () => clearInterval(id);
   });
 
@@ -114,8 +114,6 @@
   const pct = $derived(Math.round((done / total) * 100));
   const sprintName = $derived(dataStore.epics[0]?.sprint ?? "Sprint");
 </script>
-
-
 
 <div class="shell">
   <!-- ════════════════════════════════════════════════════════════════════════
@@ -162,12 +160,14 @@
         class="about-btn"
         class:active={aboutOpen}
         onclick={() => (aboutOpen = !aboutOpen)}
-        title="About AtlasMind"
-      >?</button>
+        title="About AtlasMind">?</button
+      >
       {#if aboutOpen}
         <div class="about-panel" role="dialog" aria-label="About">
           <p class="about-title">AtlasMind · Insight Engine</p>
-          <p class="about-desc">Jira visualization and AI-powered query dashboard.</p>
+          <p class="about-desc">
+            Jira visualization and AI-powered query dashboard.
+          </p>
           <p class="about-footer">© 2026 Sunish Bharathan · MIT Licensed</p>
         </div>
       {/if}
@@ -296,7 +296,7 @@
 
     <!-- View tab buttons - chart view is excluded (switches automatically via AI) -->
     <div class="view-tabs">
-      {#each VIEWS.filter(v => v.id !== 'chart') as view}
+      {#each VIEWS.filter((v) => v.id !== "chart") as view}
         {@const active = selectedIds.has(view.id)}
         <button
           class="view-tab"
@@ -313,8 +313,12 @@
     <div class="ai-area">
       {#if chartStore.lastMeta?.model_name}
         <span class="model-badge" class:offline={!chartStore.backendAlive}>
-          <span class="model-dot" class:offline={!chartStore.backendAlive}></span>
-          {chartStore.lastMeta.model_name}{chartStore.lastMeta.llm_timeout != null ? ` · ${chartStore.lastMeta.llm_timeout}s` : ''}
+          <span class="model-dot" class:offline={!chartStore.backendAlive}
+          ></span>
+          {chartStore.lastMeta.model_name}{chartStore.lastMeta.llm_timeout !=
+          null
+            ? ` · ${chartStore.lastMeta.llm_timeout}s`
+            : ""}
         </span>
       {/if}
       <button
@@ -323,7 +327,13 @@
         onclick={() => (chatOpen = !chatOpen)}
       >
         <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-          <circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.3" />
+          <circle
+            cx="7"
+            cy="7"
+            r="6"
+            stroke="currentColor"
+            stroke-width="1.3"
+          />
           <path
             d="M4.5 5.5C4.5 4.12 5.62 3 7 3s2.5 1.12 2.5 2.5c0 1.2-.8 2.2-1.9 2.45V9h-1.2V7.95C5.3 7.7 4.5 6.7 4.5 5.5z"
             fill="currentColor"
@@ -395,24 +405,27 @@
                   >{/if}
               </div>
             </div>
+          {:else if chartStore.data?.jql}
+            <div class="dp-jql">
+              <span class="dp-jql-label">JQL</span>
+              <code class="dp-jql-code" title={chartStore.data.jql}
+                >{chartStore.data.jql}</code
+              >
+              {#if chartStore.data.jira_base_url}
+                <a
+                  class="dp-jql-link"
+                  href="{chartStore.data
+                    .jira_base_url}/issues/?jql={encodeURIComponent(
+                    chartStore.data.jql,
+                  )}"
+                  target="_blank"
+                  rel="noopener"
+                  title="Open in Jira">↗</a
+                >
+              {/if}
+            </div>
           {:else}
-            {#if chartStore.data?.jql}
-              <div class="dp-jql">
-                <span class="dp-jql-label">JQL</span>
-                <code class="dp-jql-code" title={chartStore.data.jql}>{chartStore.data.jql}</code>
-                {#if chartStore.data.jira_base_url}
-                  <a
-                    class="dp-jql-link"
-                    href="{chartStore.data.jira_base_url}/issues/?jql={encodeURIComponent(chartStore.data.jql)}"
-                    target="_blank"
-                    rel="noopener"
-                    title="Open in Jira"
-                  >↗</a>
-                {/if}
-              </div>
-            {:else}
-              <span class="dp-hint">Hover a card to explore connections</span>
-            {/if}
+            <span class="dp-hint">Hover a card to explore connections</span>
           {/if}
         </div>
       </div>
@@ -423,7 +436,9 @@
   </div>
 </div>
 
-<span class="build-badge">Built {new Date(__BUILD_TIME__).toLocaleString()}</span>
+<span class="build-badge"
+  >Built {new Date(__BUILD_TIME__).toLocaleString()}</span
+>
 
 <style>
   /* ── Shell ──────────────────────────────────────────────────────────────── */
@@ -480,9 +495,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: border-color 0.15s, color 0.15s;
+    transition:
+      border-color 0.15s,
+      color 0.15s;
   }
-  .about-btn:hover, .about-btn.active {
+  .about-btn:hover,
+  .about-btn.active {
     border-color: #818cf8;
     color: #818cf8;
   }
@@ -848,7 +866,10 @@
     font-weight: 500;
     cursor: pointer;
     font-family: inherit;
-    transition: color 0.15s, background 0.15s, border-color 0.15s;
+    transition:
+      color 0.15s,
+      background 0.15s,
+      border-color 0.15s;
     white-space: nowrap;
   }
 
@@ -913,8 +934,13 @@
   }
 
   @keyframes model-pulse {
-    0%, 100% { opacity: 1; }
-    50%       { opacity: 0.35; }
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
   }
 
   /* ── Ask AI button ──────────────────────────────────────────────────────── */
@@ -1116,7 +1142,7 @@
     flex-shrink: 0;
   }
   .dp-jql-code {
-    font-family: 'Consolas', monospace;
+    font-family: "Consolas", monospace;
     font-size: 11px;
     color: #94a3b8;
     overflow: hidden;
@@ -1131,5 +1157,7 @@
     flex-shrink: 0;
     line-height: 1;
   }
-  .dp-jql-link:hover { text-decoration: underline; }
+  .dp-jql-link:hover {
+    text-decoration: underline;
+  }
 </style>
