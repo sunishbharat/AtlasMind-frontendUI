@@ -47,6 +47,7 @@
 
   // - View state --------------------------------------------------------------
   let chatOpen    = $state(false);
+  let aboutOpen   = $state(false);
   let selectedIds = $state(new Set<string>(["hierarchy"]));
 
   const activeViews = $derived(VIEWS.filter((v) => selectedIds.has(v.id)));
@@ -154,6 +155,22 @@
         <span class="progress-label">{done}/{total} done</span>
         <span class="progress-pct">{pct}%</span>
       </div>
+    </div>
+
+    <div class="about-wrap">
+      <button
+        class="about-btn"
+        class:active={aboutOpen}
+        onclick={() => (aboutOpen = !aboutOpen)}
+        title="About AtlasMind"
+      >?</button>
+      {#if aboutOpen}
+        <div class="about-panel" role="dialog" aria-label="About">
+          <p class="about-title">AtlasMind · Insight Engine</p>
+          <p class="about-desc">Jira visualization and AI-powered query dashboard.</p>
+          <p class="about-footer">© 2026 Sunish Bharathan · MIT Licensed</p>
+        </div>
+      {/if}
     </div>
   </div>
 
@@ -297,7 +314,7 @@
       {#if chartStore.lastMeta?.model_name}
         <span class="model-badge" class:offline={!chartStore.backendAlive}>
           <span class="model-dot" class:offline={!chartStore.backendAlive}></span>
-          {chartStore.lastMeta.model_name}
+          {chartStore.lastMeta.model_name}{chartStore.lastMeta.llm_timeout != null ? ` · ${chartStore.lastMeta.llm_timeout}s` : ''}
         </span>
       {/if}
       <button
@@ -440,6 +457,71 @@
     padding-bottom: 14px;
     user-select: none;
     pointer-events: none; /* truly non-interactive */
+  }
+
+  .about-wrap {
+    position: relative;
+    margin-left: 12px;
+    pointer-events: all;
+    user-select: none;
+  }
+
+  .about-btn {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1px solid #1e293b;
+    background: transparent;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .about-btn:hover, .about-btn.active {
+    border-color: #818cf8;
+    color: #818cf8;
+  }
+
+  .about-panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 220px;
+    background: #0d1b2e;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 12px 14px;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .about-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #f1f5f9;
+    margin: 0;
+  }
+
+  .about-desc {
+    font-size: 10px;
+    color: #64748b;
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .about-footer {
+    font-size: 10px;
+    color: #334155;
+    margin: 0;
+    padding-top: 6px;
+    border-top: 1px solid #1e293b;
   }
 
   .brand-left {

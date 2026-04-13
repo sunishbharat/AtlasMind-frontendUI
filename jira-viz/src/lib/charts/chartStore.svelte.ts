@@ -17,6 +17,7 @@ export interface ChartSpec {
  */
 export interface ServerMeta {
   model_name?: string | null;
+  llm_timeout?: number | null;
   // future fields added here without breaking existing clients
 }
 
@@ -76,7 +77,14 @@ class ChartStore {
   pollMeta(): void {
     fetch('/api/meta')
       .then(r => r.ok ? r.json() : null)
-      .then(data => { data?.model_name ? this.updateMeta(data) : this.clearMeta(); })
+      .then(data => {
+        if (data?.model_name) {
+          console.log('[meta] model:', data.model_name, '| timeout:', data.llm_timeout ?? 'unknown');
+          this.updateMeta(data);
+        } else {
+          this.clearMeta();
+        }
+      })
       .catch(() => this.clearMeta());
   }
 

@@ -109,9 +109,20 @@ def run_query(req: QueryRequest):
     if req.profile:
         params["profile"] = req.profile
 
+    # Resolve timeout from /meta so it matches the backend's LLM timeout.
+    llm_timeout = 120
     try:
-        print(f"[AtlasMind] Querying: {ATLASMIND_URL}/query  params={params}")
-        with httpx.Client(timeout=120) as client:
+        with httpx.Client(timeout=5) as meta_client:
+            meta_resp = meta_client.get(f"{ATLASMIND_URL}/meta")
+            if meta_resp.is_success:
+                llm_timeout = meta_resp.json().get("llm_timeout") or llm_timeout
+    except Exception:
+        pass
+    query_timeout = llm_timeout + 10  # buffer so backend error propagates cleanly
+
+    try:
+        print(f"[AtlasMind] Querying: {ATLASMIND_URL}/query  params={params}  timeout={query_timeout}s")
+        with httpx.Client(timeout=query_timeout) as client:
             resp = client.get(f"{ATLASMIND_URL}/query", params=params)
             resp.raise_for_status()
 
@@ -129,7 +140,7 @@ def run_query(req: QueryRequest):
             "error": "Backend not reachable — switch to Demo mode to explore your sprint data offline.",
         }
     except httpx.TimeoutException:
-        return {"output": None, "error": "AtlasMind server timed out (120 s)."}
+        return {"output": None, "error": f"AtlasMind server timed out ({query_timeout} s)."}
     except httpx.HTTPStatusError as exc:
         return {"output": None, "error": f"AtlasMind returned {exc.response.status_code}: {exc.response.text}"}
     except Exception as exc:
