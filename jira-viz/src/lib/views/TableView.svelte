@@ -111,6 +111,14 @@
     return String(val);
   }
 
+  const rowCount = $derived(dataStore.fromAI ? aiIssues.length : tableRows.length);
+
+  const densityClass = $derived(
+    rowCount > 50 ? 'density-dense' :
+    rowCount > 20 ? 'density-compact' :
+    '',
+  );
+
   function isDate(s: string): boolean {
     return /^\d{4}-\d{2}-\d{2}/.test(s);
   }
@@ -124,7 +132,7 @@
 
 {#if dataStore.fromAI}
   <!-- ── AI flat table ──────────────────────────────────────────────────────── -->
-  <div class="table-view">
+  <div class="table-view {densityClass}">
 
     <!-- Source badge -->
     {#if chartStore.query}
@@ -181,7 +189,7 @@
 
 {:else}
   <!-- ── Demo / CSV hierarchy table ─────────────────────────────────────────── -->
-  <div class="table-view">
+  <div class="table-view {densityClass}">
     <div class="table-wrap">
       <table>
         <thead>
@@ -323,4 +331,27 @@
 
   .cell-val { color: #94a3b8; font-size: 11px; }
   .date-cell { color: #64748b; font-size: 11px; font-variant-numeric: tabular-nums; }
+
+  /* ── Density: compact (21-50 rows) ──────────────────────────────────────── */
+  .density-compact table     { font-size: 11px; }
+  .density-compact th        { font-size: 9px; padding: 7px 12px; }
+  .density-compact .row td   { padding: 5px 12px; }
+  .density-compact .row-key  { font-size: 9.5px; }
+  .density-compact .type-pill { font-size: 8.5px; padding: 1px 6px; }
+  .density-compact .avatar   { width: 16px; height: 16px; font-size: 7px; }
+  .density-compact .cell-val { font-size: 10px; }
+  .density-compact .date-cell { font-size: 10px; }
+  .density-compact .status-dot { width: 5px; height: 5px; }
+
+  /* ── Density: dense (51+ rows) ──────────────────────────────────────────── */
+  .density-dense table     { font-size: 10px; }
+  .density-dense th        { font-size: 8.5px; padding: 5px 10px; }
+  .density-dense .row td   { padding: 3px 10px; }
+  .density-dense .row-key  { font-size: 9px; }
+  .density-dense .type-pill { font-size: 8px; padding: 1px 5px; border-radius: 3px; }
+  .density-dense .avatar   { width: 14px; height: 14px; font-size: 6px; }
+  .density-dense .cell-val { font-size: 9px; }
+  .density-dense .date-cell { font-size: 9px; }
+  .density-dense .status-dot { width: 5px; height: 5px; margin-right: 4px; }
+  .density-dense .row-summary { font-size: 10px; }
 </style>

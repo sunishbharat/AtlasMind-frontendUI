@@ -11,7 +11,13 @@
 
   echarts.use([BarChart, PieChart, LineChart, ScatterChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
 
-  let { option = {} as EChartsOption, height = '220px' }: { option?: EChartsOption; height?: string } = $props();
+  interface ChartClickParams { name: string; seriesName?: string; componentType?: string; dataIndex?: number }
+
+  let {
+    option = {} as EChartsOption,
+    height = '220px',
+    onChartClick = undefined as ((p: ChartClickParams) => void) | undefined,
+  } = $props();
 
   let container: HTMLDivElement;
   let chart: EChartsType | undefined;
@@ -19,6 +25,10 @@
   onMount(() => {
     chart = echarts.init(container, null, { renderer: 'canvas' });
     chart.setOption(option);
+
+    chart.on('click', (params: unknown) => {
+      onChartClick?.(params as ChartClickParams);
+    });
 
     const ro = new ResizeObserver(() => chart?.resize());
     ro.observe(container);

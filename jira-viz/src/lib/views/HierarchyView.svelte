@@ -28,6 +28,12 @@
     return map;
   });
 
+  // Sort each column: issues with connections first (most connections → top)
+  const connCount = (id: string) => adj[id]?.length ?? 0;
+  const sortedEpics    = $derived([...dataStore.epics   ].sort((a, b) => connCount(b.id) - connCount(a.id)));
+  const sortedStories  = $derived([...dataStore.stories ].sort((a, b) => connCount(b.id) - connCount(a.id)));
+  const sortedSubtasks = $derived([...dataStore.subtasks].sort((a, b) => connCount(b.id) - connCount(a.id)));
+
   // - DOM refs and positions --------------------------------------------------
   let containerEl: HTMLDivElement;
   const nodeEls: Record<string, HTMLButtonElement> = {};
@@ -62,11 +68,23 @@
     return () => ro.disconnect();
   });
 
-  // Recompute positions when data changes (CSV upload swaps cards)
+  // Recompute positions when sorted order changes (connections or data swap)
   $effect(() => {
-    dataStore.epics; dataStore.stories; dataStore.subtasks;
+    sortedEpics; sortedStories; sortedSubtasks;
     requestAnimationFrame(computePositions);
   });
+
+  const maxColCount = $derived(Math.max(
+    dataStore.epics.length,
+    dataStore.stories.length,
+    dataStore.subtasks.length,
+  ));
+
+  const densityClass = $derived(
+    maxColCount > 20 ? 'density-dense' :
+    maxColCount > 8  ? 'density-compact' :
+    '',
+  );
 
   function isRelated(id: string): boolean {
     const h = vizState.hoveredId;
@@ -92,7 +110,7 @@
   }
 </script>
 
-<div class="hierarchy" bind:this={containerEl}>
+<div class="hierarchy {densityClass}" bind:this={containerEl}>
 
   <!-- SVG connection overlay -->
   <svg class="overlay" width={svgW} height={svgH} aria-hidden="true">
@@ -130,7 +148,7 @@
 
     <div class="col">
       <div class="col-label">Epics</div>
-      {#each dataStore.epics as epic (epic.id)}
+      {#each sortedEpics as epic (epic.id)}
         {@const s = STATUS_STYLE[epic.status]}
         <button
           class="card"
@@ -153,7 +171,7 @@
 
     <div class="col">
       <div class="col-label">Stories</div>
-      {#each dataStore.stories as story (story.id)}
+      {#each sortedStories as story (story.id)}
         {@const s = STATUS_STYLE[story.status]}
         <button
           class="card"
@@ -176,7 +194,7 @@
 
     <div class="col">
       <div class="col-label">Sub-tasks</div>
-      {#each dataStore.subtasks as st (st.id)}
+      {#each sortedSubtasks as st (st.id)}
         {@const s = STATUS_STYLE[st.status]}
         <button
           class="card"
@@ -293,6 +311,28 @@
   .meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
   .badge { font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; }
   .pts { font-size: 9.5px; color: #475569; background: #1e293b; padding: 1px 7px; border-radius: 999px; border: 1px solid #334155; }
+
+  /* ── Density: compact (9-20 items per column) ───────────────────────────── */
+  .density-compact .cols  { padding: 16px 20px; gap: 0 48px; }
+  .density-compact .col   { gap: 6px; }
+  .density-compact .col-label { margin-bottom: 3px; }
+  .density-compact .card  { padding: 7px 10px; gap: 3px; }
+  .density-compact .title { font-size: 11px; }
+  .density-compact .key   { font-size: 8.5px; }
+  .density-compact .meta  { margin-top: 1px; gap: 5px; }
+  .density-compact .badge { font-size: 8.5px; }
+  .density-compact .pts   { font-size: 8.5px; }
+
+  /* ── Density: dense (21+ items per column) ──────────────────────────────── */
+  .density-dense .cols  { padding: 8px 14px; gap: 0 32px; }
+  .density-dense .col   { gap: 3px; }
+  .density-dense .col-label { margin-bottom: 2px; font-size: 9px; }
+  .density-dense .card  { padding: 4px 8px; gap: 2px; border-radius: 5px; }
+  .density-dense .title { font-size: 9.5px; line-height: 1.3; }
+  .density-dense .key   { font-size: 7.5px; }
+  .density-dense .meta  { margin-top: 0; gap: 4px; }
+  .density-dense .badge { font-size: 7.5px; }
+  .density-dense .pts   { font-size: 7.5px; padding: 0 5px; }
 
   /* TODO: remove — temporary stacked bar demo */
   .demo-stacked {

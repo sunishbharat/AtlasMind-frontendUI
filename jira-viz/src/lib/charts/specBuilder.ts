@@ -7,7 +7,7 @@
 
 import type { EChartsOption } from 'echarts';
 import type { ApiIssue, ChartSpec } from './chartStore.svelte.js';
-import { BASE_OPTION, paletteGradient, paletteColor } from './theme.js';
+import { BASE_OPTION, paletteGradient, paletteColor, PALETTE } from './theme.js';
 import { StackedBarChart } from './StackedBarChart.js';
 
 export interface SpecEntry {
@@ -199,7 +199,11 @@ export function buildBar(entries: [string, number][], title: string, maxItems = 
       splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
       minInterval: 1,
     },
-    series: [{ type: 'bar', data: values, barMaxWidth: 44, emphasis: { itemStyle: { opacity: 0.8 } } }],
+    series: [{
+      type: 'bar', data: values, barMaxWidth: 44,
+      label: { show: true, position: 'top', color: '#94a3b8', fontSize: 10, fontFamily: 'Inter, system-ui, sans-serif', formatter: '{c}' },
+      emphasis: { itemStyle: { opacity: 0.8 } },
+    }],
   };
 }
 
@@ -218,43 +222,99 @@ export function buildStackedBar(
 
 export function buildPie(entries: [string, number][], title: string, maxItems = 10, animation = true): EChartsOption {
   const slice = entries.slice(0, maxItems);
-  const data  = slice.map(([name, value], i) => ({ name, value, itemStyle: { color: paletteColor(i) } }));
+
+  // Lift the smallest slices so they're always at least 28% the size of the largest.
+  // This keeps relative order intact while making tiny values visible in rose mode.
+  const rawValues = slice.map(([, v]) => v);
+  const total     = rawValues.reduce((s, v) => s + v, 0);
+  const maxVal    = Math.max(...rawValues);
+  const minVal    = Math.min(...rawValues);
+  const MIN_FLOOR = 0.28; // smallest slice ≥ 28% of largest
+  const normalize = (v: number): number =>
+    maxVal === minVal ? v : MIN_FLOOR * maxVal + ((v - minVal) / (maxVal - minVal)) * (1 - MIN_FLOOR) * maxVal;
+
+  const data = slice.map(([name, value], i) => {
+    const [light, dark] = PALETTE[i % PALETTE.length];
+    const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0';
+    return {
+      name,
+      value: normalize(value),          // scaled for visual size
+      originalValue: value,             // kept for tooltip accuracy
+      tooltip: { formatter: () => `<b>${name}</b><br/>${value} &nbsp;·&nbsp; ${pct}%` },
+      itemStyle: {
+        color: {
+          type: 'radial', x: 0.5, y: 0.5, r: 0.85,
+          colorStops: [
+            { offset: 0,   color: dark  + 'cc' },   // vivid at center (was '55')
+            { offset: 0.6, color: light + 'ee' },
+            { offset: 1,   color: light },
+          ],
+        } as unknown as string,
+        borderColor: '#0f172a',
+        borderWidth: 2,
+        shadowBlur: 6,
+        shadowColor: light + '66',       // soft resting glow
+      },
+    };
+  });
+
+  const rich = {
+    name: { fontSize: 11, color: '#94a3b8', fontWeight: 500, fontFamily: 'Inter, system-ui, sans-serif', lineHeight: 17 },
+    val:  { fontSize: 10, color: '#818cf8', fontWeight: 600, fontFamily: 'Inter, system-ui, sans-serif', lineHeight: 14 },
+    pct:  { fontSize: 10, color: '#e2e8f0', fontWeight: 600, fontFamily: 'Inter, system-ui, sans-serif', lineHeight: 14 },
+  };
 
   return {
     ...BASE_OPTION,
     animation,
+    // Stagger each slice entry for a sequential bloom effect
+    animationDelay: (idx: number) => idx * 70,
+    animationDuration: 700,
+    animationEasing: 'cubicOut' as const,
     title: {
       text: title,
       textStyle: { color: '#64748b', fontSize: 11, fontWeight: 400, fontFamily: 'Inter, system-ui, sans-serif' },
       top: 4, left: 6,
     },
     legend: {
-      show: slice.length <= 8,
+      show: true,
       bottom: 4,
       textStyle: { color: '#475569', fontSize: 10, fontWeight: 400, fontFamily: 'Inter, system-ui, sans-serif' },
       icon: 'circle', itemWidth: 6, itemHeight: 6, itemGap: 10,
     },
     series: [{
       type: 'pie',
-      radius: ['38%', '64%'],
-      center: ['50%', '50%'],
+      // Nightingale rose: slice radius ∝ value — visually distinctive "flower" pattern
+      roseType: 'radius' as const,
+      radius: ['34%', '68%'],
+      // Guarantee every slice has at least 12° so small values stay visible
+      minAngle: 12,
+      center: ['50%', '46%'],
       data,
       label: {
-        show: slice.length <= 6,
-        formatter: '{name|{b}}\n{pct|{d}%}',
-        rich: {
-          name: {
-            fontSize: 11, color: '#94a3b8', fontWeight: 500,
-            fontFamily: 'Inter, system-ui, sans-serif', lineHeight: 17,
-          },
-          pct: {
-            fontSize: 10, color: '#475569', fontWeight: 400,
-            fontFamily: 'Inter, system-ui, sans-serif', lineHeight: 14,
-          },
+        show: true,
+        formatter: slice.length <= 6 ? '{name|{b}}\n{pct|{d}%}' : '{pct|{d}%}',
+        rich,
+        minMargin: 4,
+      },
+      labelLine: {
+        show: true, length: 10, length2: 12,
+        lineStyle: { color: '#334155', width: 1, type: 'dashed' as const },
+        smooth: 0.4,
+      },
+      emphasis: {
+        scale: true,
+        scaleSize: 6,
+        itemStyle: {
+          shadowBlur: 24,
+          shadowColor: 'rgba(129,140,248,0.55)',
+          borderColor: 'rgba(255,255,255,0.25)',
+          borderWidth: 2,
         },
       },
-      labelLine: { length: 8, length2: 10, lineStyle: { color: '#1e3a5f', width: 1 } },
-      emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,.35)' } },
+      blur: {
+        itemStyle: { opacity: 0.35 },
+      },
     }],
   };
 }
@@ -285,8 +345,8 @@ export function buildTrend(issues: ApiIssue[], animation = true): EChartsOption 
       lineStyle: { color: '#818cf8', width: 2 },
       areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(129,140,248,0.25)' }, { offset: 1, color: 'rgba(129,140,248,0.02)' }] } },
     },
-    { name: 'Created', type: 'bar', data: createdData, barMaxWidth: 20, itemStyle: { color: 'rgba(129,140,248,0.4)' } },
-    ...(resolvedData ? [{ name: 'Resolved', type: 'bar', data: resolvedData, barMaxWidth: 20, itemStyle: { color: 'rgba(52,211,153,0.5)' } }] : []),
+    { name: 'Created', type: 'bar', data: createdData, barMaxWidth: 20, itemStyle: { color: 'rgba(129,140,248,0.4)' }, label: { show: labels.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: '{c}' } },
+    ...(resolvedData ? [{ name: 'Resolved', type: 'bar', data: resolvedData, barMaxWidth: 20, itemStyle: { color: 'rgba(52,211,153,0.5)' }, label: { show: labels.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: '{c}' } }] : []),
   ];
 
   const axisLabel = { color: '#475569', fontSize: 10, rotate: labels.length > 10 ? 30 : 0, interval: Math.max(0, Math.floor(labels.length / 8) - 1) };
@@ -367,6 +427,7 @@ export function buildGroupedTrend(
       symbolSize: 4,
       lineStyle: { color, width: 1.8 },
       itemStyle: { color },
+      label: { show: spine.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: '{c}' },
       emphasis: { focus: 'series' as const },
     };
   });
@@ -469,8 +530,10 @@ export function buildGroupedCategorical(
         symbol:      'circle',
         symbolSize:  4,
         lineStyle:   { color, width: 1.8 },
+        label: { show: categories.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: '{c}' },
       } : {
         barMaxWidth: 28,
+        label: { show: true, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: '{c}' },
       }),
       itemStyle: { color },
       emphasis:  { focus: 'series' as const },

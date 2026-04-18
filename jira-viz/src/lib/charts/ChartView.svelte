@@ -76,7 +76,7 @@
 
   let axisX        = $state(chartStore.chartSpec?.x_field ?? '');
   let axisY        = $state(chartStore.chartSpec?.y_field ?? 'count');
-  let axisType     = $state(chartStore.chartSpec?.type    ?? 'bar');
+  let axisType     = $state(chartStore.chartSpec?.type    ?? 'pie');
   let openAxisMenu = $state<'x' | 'y' | 'type' | null>(null);
   let axisSearch   = $state('');
 
@@ -85,6 +85,9 @@
       axisX    = chartStore.chartSpec.x_field;
       axisY    = chartStore.chartSpec.y_field;
       axisType = chartStore.chartSpec.type;
+    } else {
+      // No server chart_spec — default to pie so something meaningful shows immediately
+      axisType = 'pie';
     }
   });
 
@@ -212,8 +215,15 @@
         data:  s.data,
         ...(s.stack ? { stack: s.stack } : {}),
         ...(s.chart_type === 'bar'
-          ? { itemStyle: { color: paletteGradient(i) }, barMaxWidth: 40 }
-          : { smooth: true, showSymbol: false, lineStyle: { color: paletteColor(i), width: 2 } }),
+          ? {
+              itemStyle: { color: paletteGradient(i) },
+              barMaxWidth: 40,
+              label: s.stack
+                ? { show: true, position: 'inside' as const, color: 'rgba(255,255,255,0.85)', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: (p: { value: number | null }) => (p.value && p.value > 0 ? String(p.value) : '') }
+                : { show: true, position: 'top'    as const, color: '#94a3b8',                fontSize: 10, fontFamily: 'Inter, system-ui, sans-serif', formatter: '{c}' },
+            }
+          : { smooth: true, showSymbol: false, lineStyle: { color: paletteColor(i), width: 2 },
+              label: { show: agg.x_axis.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: '{c}' } }),
       })),
     };
   });
@@ -420,6 +430,33 @@
   });
 
   const currentOption = $derived(activeTab ? specs[activeTab]?.option ?? {} : {});
+
+  // - Jira drill-down on chart click -------------------------------------------
+
+  /** Infer the Jira field name for the active chart tab. */
+  const clickField = $derived.by((): string | null => {
+    if (!activeTab) return null;
+    if (activeTab === 'explicit') return axisX || null;
+    const m = activeTab.match(/^(?:bar|pie|line|scatter|stacked)_(.+)$/);
+    return m ? m[1] : null;
+  });
+
+  function handleBarClick(params: { name?: string }): void {
+    const value   = params.name;
+    const field   = clickField;
+    const baseUrl = chartStore.data?.jira_base_url;
+    if (!value || !field || !baseUrl) return;
+
+    const raw = chartStore.data?.jql ?? '';
+    // Split off any ORDER BY clause so the new filter is inserted before it
+    const orderMatch = raw.match(/(\s+ORDER\s+BY\s+.+)$/i);
+    const orderClause = orderMatch ? orderMatch[1] : '';
+    const baseJql    = orderMatch ? raw.slice(0, orderMatch.index) : raw;
+    const isEmpty      = value === '—' || value === 'Not set' || value === '';
+    const filterClause = isEmpty ? `${field} is EMPTY` : `${field} = "${value}"`;
+    const jql = baseJql ? `${baseJql} AND ${filterClause}${orderClause}` : filterClause;
+    window.open(`${baseUrl}/issues/?jql=${encodeURIComponent(jql)}`, '_blank', 'noopener');
+  }
 
   function openDropdown(col: string): void {
     openFilter   = openFilter === col ? null : col;
@@ -752,7 +789,7 @@
           </div>
 
           <div class="cv-chart-area">
-            <ChartRenderer option={currentOption} height="100%" />
+            <ChartRenderer option={currentOption} height="100%" onChartClick={handleBarClick} />
           </div>
         {:else}
           <div class="cv-empty-chart">No chart data</div>
@@ -1188,6 +1225,7 @@
   .cv-chart-area {
     flex: 1;
     min-height: 0;
+    cursor: pointer;
   }
 
   /* ── Divider ─────────────────────────────────────────────────────────────── */

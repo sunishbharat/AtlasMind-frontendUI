@@ -168,6 +168,12 @@ export class StackedBarChart {
         data: s.data.slice(0, this._maxCats),
         itemStyle: { color: paletteColor(i) },
         barMaxWidth: 44,
+        label: {
+          show: true, position: 'inside' as const,
+          color: 'rgba(255,255,255,0.85)', fontSize: 9,
+          fontFamily: 'Inter, system-ui, sans-serif',
+          formatter: (p: { value: number }) => (p.value > 0 ? String(p.value) : ''),
+        },
         emphasis: { focus: 'series' as const },
       })),
       grid: { ...(BASE_OPTION.grid as object), top: 52 },
