@@ -223,21 +223,38 @@ export function buildPie(entries: [string, number][], title: string, maxItems = 
   return {
     ...BASE_OPTION,
     animation,
-    title: { text: title, textStyle: { color: '#94a3b8', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
+    title: {
+      text: title,
+      textStyle: { color: '#64748b', fontSize: 11, fontWeight: 400, fontFamily: 'Inter, system-ui, sans-serif' },
+      top: 4, left: 6,
+    },
     legend: {
-      show: slice.length <= 6,
-      bottom: 2,
-      textStyle: { color: '#64748b', fontSize: 10 },
-      icon: 'circle', itemWidth: 7, itemHeight: 7,
+      show: slice.length <= 8,
+      bottom: 4,
+      textStyle: { color: '#475569', fontSize: 10, fontWeight: 400, fontFamily: 'Inter, system-ui, sans-serif' },
+      icon: 'circle', itemWidth: 6, itemHeight: 6, itemGap: 10,
     },
     series: [{
       type: 'pie',
-      radius: ['36%', '66%'],
-      center: ['50%', '52%'],
+      radius: ['38%', '64%'],
+      center: ['50%', '50%'],
       data,
-      label: { show: slice.length <= 8, formatter: '{b}: {d}%', fontSize: 10, color: '#64748b' },
-      labelLine: { lineStyle: { color: '#334155' } },
-      emphasis: { itemStyle: { shadowBlur: 12, shadowColor: 'rgba(0,0,0,.4)' } },
+      label: {
+        show: slice.length <= 6,
+        formatter: '{name|{b}}\n{pct|{d}%}',
+        rich: {
+          name: {
+            fontSize: 11, color: '#94a3b8', fontWeight: 500,
+            fontFamily: 'Inter, system-ui, sans-serif', lineHeight: 17,
+          },
+          pct: {
+            fontSize: 10, color: '#475569', fontWeight: 400,
+            fontFamily: 'Inter, system-ui, sans-serif', lineHeight: 14,
+          },
+        },
+      },
+      labelLine: { length: 8, length2: 10, lineStyle: { color: '#1e3a5f', width: 1 } },
+      emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,.35)' } },
     }],
   };
 }

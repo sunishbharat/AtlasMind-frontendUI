@@ -51,8 +51,11 @@ export function paletteColor(index: number): string {
 export const BASE_OPTION: EChartsOption = {
   backgroundColor: 'transparent',
   animation: true,
-  animationDuration: 380,
+  animationDuration: 520,
   animationEasing: 'cubicOut',
+  animationDelay: (idx: number) => idx * 35,
+  animationDurationUpdate: 400,
+  animationEasingUpdate: 'cubicInOut',
   textStyle: {
     fontFamily: 'Inter, system-ui, sans-serif',
     color: '#94a3b8',

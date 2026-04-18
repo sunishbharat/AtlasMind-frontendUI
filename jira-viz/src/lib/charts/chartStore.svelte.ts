@@ -1,6 +1,21 @@
 // charts/chartStore.svelte.ts
 // Shared reactive store - bridge between ChatPanel (writer) and ChartView (reader).
 
+/** Pre-aggregated chart data returned by /api/aggregate. */
+export interface AggregateResponse {
+  chart_type: string;
+  title: string;
+  x_axis: string[];
+  series: { name: string; data: (number | null)[]; chart_type: string; stack: string | null }[];
+  pie_data: { name: string; value: number }[] | null;
+  scatter_data: { name: string; x: number; y: number; group: string }[] | null;
+  total_issues: number;
+  fields_resolved: Record<string, string>;
+  warnings: string[];
+  field_counts: Record<string, Record<string, number>> | null;
+  filtered_count: number | null;
+}
+
 /** Explicit chart spec returned by the server. */
 export interface ChartSpec {
   type: string;
@@ -64,6 +79,12 @@ class ChartStore {
   /** True when the last /api/meta poll succeeded. */
   backendAlive = $state(false);
 
+  /** Result from the most recent /api/aggregate call (null until first call). */
+  aggregated = $state<AggregateResponse | null>(null);
+
+  /** True while an /api/aggregate fetch is in-flight. */
+  aggregating = $state(false);
+
   updateMeta(meta: ServerMeta | null | undefined): void {
     if (meta) this.lastMeta = meta;
     this.backendAlive = true;
@@ -111,12 +132,16 @@ class ChartStore {
     console.warn('[chartStore] noResults:', this.noResults, '| issues count:', newIssues.length);
   }
 
+  setAggregated(r: AggregateResponse): void { this.aggregated = r; }
+  clearAggregated(): void { this.aggregated = null; this.aggregating = false; }
+
   clear(): void {
     this.data      = null;
     this.issues    = [];
     this.chartSpec = null;
     this.query     = '';
     this.noResults = false;
+    this.clearAggregated();
   }
 
   get hasData(): boolean {

@@ -5,11 +5,11 @@
   import type { EChartsOption } from 'echarts';
   import type { EChartsType } from 'echarts/core';
   import * as echarts from 'echarts/core';
-  import { BarChart, PieChart, LineChart } from 'echarts/charts';
+  import { BarChart, PieChart, LineChart, ScatterChart } from 'echarts/charts';
   import { GridComponent, TooltipComponent, TitleComponent, LegendComponent } from 'echarts/components';
   import { CanvasRenderer } from 'echarts/renderers';
 
-  echarts.use([BarChart, PieChart, LineChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
+  echarts.use([BarChart, PieChart, LineChart, ScatterChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
 
   let { option = {} as EChartsOption, height = '220px' }: { option?: EChartsOption; height?: string } = $props();
 

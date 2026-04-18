@@ -240,11 +240,12 @@
     pointer-events: none; overflow: visible; z-index: 0;
   }
 
-  .conn { transition: stroke 0.15s, stroke-width 0.15s; }
+  .conn { transition: stroke 0.2s, stroke-width 0.2s, filter 0.2s; }
 
   .conn.hl {
     stroke-dasharray: 4 9;
     animation: flow 0.7s linear infinite;
+    filter: drop-shadow(0 0 4px rgba(96, 165, 250, 0.7));
   }
 
   @keyframes flow { to { stroke-dashoffset: -13; } }
@@ -270,15 +271,21 @@
     display: flex; flex-direction: column; gap: 5px;
     padding: 11px 13px; background: #131e2e;
     border: 1px solid #1e293b; border-left: 3px solid var(--c);
-    border-radius: 7px; transition: opacity 0.18s, box-shadow 0.18s, background 0.18s;
+    border-radius: 7px; transition: opacity 0.18s, box-shadow 0.22s ease-out, background 0.18s, transform 0.18s ease-out;
   }
 
   .card:hover, .card.hl {
     background: var(--bg);
-    box-shadow: 0 0 0 1px var(--c), 0 8px 24px rgba(0,0,0,0.4);
+    transform: translateY(-1px);
+    box-shadow:
+      0 0 0 1px var(--c),
+      0 0 12px rgba(129, 140, 248, 0.22),
+      0 0 28px rgba(129, 140, 248, 0.10),
+      inset 0 0 12px rgba(129, 140, 248, 0.06),
+      0 10px 28px rgba(0, 0, 0, 0.5);
   }
 
-  .card.dim { opacity: 0.2; }
+  .card.dim { opacity: 0.15; transform: none; }
 
   .key { font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; color: #475569; font-family: 'Consolas', monospace; }
   .title { font-size: 12.5px; font-weight: 500; color: #cbd5e1; line-height: 1.45; }

@@ -2,11 +2,13 @@
   // Split-panel view: chart (top/left) + AI results table (bottom/right).
   // Draggable divider resizes the split ratio.
   // Layout toggle switches between vertical and horizontal orientation.
-  import type { ApiIssue } from './chartStore.svelte.js';
+  import type { EChartsOption } from 'echarts';
+  import type { ApiIssue, AggregateResponse } from './chartStore.svelte.js';
   import type { SpecEntry } from './specBuilder.js';
   import { chartStore } from './chartStore.svelte.js';
   import { dataStore } from '../dataStore.svelte.js';
-  import { buildAllSpecs, fromExplicitSpec, buildGroupedCategorical, buildGroupedTrend, autoDetectGroupField } from './specBuilder.js';
+  import { buildAllSpecs, fromExplicitSpec, buildGroupedCategorical, buildGroupedTrend, autoDetectGroupField, buildPie } from './specBuilder.js';
+  import { BASE_OPTION, paletteGradient, paletteColor } from './theme.js';
   import { features } from '../features.svelte.js';
   import ChartRenderer from './ChartRenderer.svelte';
   import AIHierarchyView from './AIHierarchyView.svelte';
@@ -26,6 +28,195 @@
   // Backend display_fields may include "Key"/"Summary" which are already fixed.
   const FIXED_COLS = new Set(['key', 'Key', 'summary', 'Summary']);
   const tableDisplayFields = $derived(displayFields.filter(c => !FIXED_COLS.has(c)));
+
+  // - Axis selector state ------------------------------------------------------
+  const CHART_TYPES = ['bar', 'stacked_bar', 'pie', 'line', 'scatter', 'trend'];
+
+  const allFields = $derived.by((): string[] => {
+    const fromDisplay = chartStore.data?.display_fields ?? [];
+    const fromKeys    = issues.length ? Object.keys(issues[0]) : [];
+    const seen        = new Set<string>();
+    const out: string[] = [];
+    for (const f of [...fromDisplay, ...fromKeys]) {
+      if (!seen.has(f)) { seen.add(f); out.push(f); }
+    }
+    return out;
+  });
+
+  // Free-text / high-cardinality fields excluded from grouping
+  const Y_SKIP = new Set(['key', 'summary', 'description', 'id', 'url', 'link']);
+
+  // Fields whose sampled values are numeric — used to classify Y-axis selection type
+  const numericFieldSet = $derived.by((): Set<string> => {
+    const s = new Set<string>();
+    if (!issues.length) return s;
+    for (const key of Object.keys(issues[0])) {
+      const sample = issues.find(i => i[key] != null)?.[key];
+      if (sample != null && !isNaN(Number(sample))) s.add(key);
+    }
+    return s;
+  });
+
+  // Y options: count first, numeric fields, then categorical fields (cardinality 2-15)
+  const yFields = $derived.by((): string[] => {
+    if (!issues.length) return ['count'];
+    const categorical: string[] = [];
+    for (const key of Object.keys(issues[0])) {
+      if (Y_SKIP.has(key.toLowerCase())) continue;
+      if (numericFieldSet.has(key)) continue;
+      const sample = issues.find(i => i[key] != null)?.[key];
+      if (sample == null) continue;
+      const uniqueCount = new Set(
+        issues.slice(0, 100).map(i => String(i[key] ?? '')).filter(Boolean)
+      ).size;
+      if (uniqueCount >= 2 && uniqueCount <= 15) categorical.push(key);
+    }
+    return ['count', ...[...numericFieldSet], ...categorical];
+  });
+
+  let axisX        = $state(chartStore.chartSpec?.x_field ?? '');
+  let axisY        = $state(chartStore.chartSpec?.y_field ?? 'count');
+  let axisType     = $state(chartStore.chartSpec?.type    ?? 'bar');
+  let openAxisMenu = $state<'x' | 'y' | 'type' | null>(null);
+  let axisSearch   = $state('');
+
+  $effect(() => {
+    if (chartStore.chartSpec) {
+      axisX    = chartStore.chartSpec.x_field;
+      axisY    = chartStore.chartSpec.y_field;
+      axisType = chartStore.chartSpec.type;
+    }
+  });
+
+  // Auto-init axisX from first available field so selectors work without an AI query
+  $effect(() => {
+    if (!axisX && allFields.length) axisX = allFields[0];
+  });
+
+  // - Aggregation fetch --------------------------------------------------------
+  let _aggTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function triggerAggregate(): void {
+    if (!issues.length || !axisX) return;
+    if (_aggTimer) clearTimeout(_aggTimer);
+    _aggTimer = setTimeout(async () => {
+      chartStore.aggregating = true;
+      // Categorical Y (e.g. "priority") acts as a grouping/stack dimension, not a value axis.
+      // Send it as color_field and use "count" as y_field so the backend stacks correctly.
+      const isCategoricalY = axisY !== 'count' && !numericFieldSet.has(axisY);
+      // Serialize Set → array for JSON; only include non-empty filters.
+      const activeFiltersPayload = hasActiveFilters
+        ? Object.fromEntries(
+            Object.entries(activeFilters)
+              .filter(([, s]) => s.size > 0)
+              .map(([k, s]) => [k, [...s]])
+          )
+        : undefined;
+      try {
+        const resp = await fetch('/api/aggregate', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            issues,
+            display_fields: displayFields,
+            active_filters: activeFiltersPayload,
+            react_to_filters: reactToFilters,
+            chart_spec: {
+              type:        axisType,
+              x_field:     axisX,
+              y_field:     isCategoricalY ? 'count' : axisY,
+              color_field: isCategoricalY ? axisY   : undefined,
+              title:       `${axisX} × ${axisY}`,
+              max_categories: 20,
+            },
+          }),
+        });
+        if (resp.ok) chartStore.setAggregated(await resp.json() as AggregateResponse);
+      } catch { /* silent - fromExplicitSpec fallback */ }
+      finally { chartStore.aggregating = false; }
+    }, 180);
+  }
+
+  $effect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    axisX; axisY; axisType; activeFilters; reactToFilters;
+    triggerAggregate();
+  });
+
+  // - ECharts option from aggregated data --------------------------------------
+  const aggregatedOption = $derived.by((): EChartsOption | null => {
+    const agg = chartStore.aggregated;
+    if (!agg) return null;
+    // Treat backend error responses (empty series, no pie/scatter) as no data
+    const hasData = agg.pie_data?.length || agg.scatter_data?.length || agg.series?.length;
+    if (!hasData) return null;
+
+    if (agg.pie_data?.length) {
+      const entries: [string, number][] = agg.pie_data.map(p => [p.name, p.value]);
+      return buildPie(entries, agg.title, 20, features.charts.animation);
+    }
+
+    if (agg.scatter_data?.length) {
+      const groups = [...new Set(agg.scatter_data.map(p => p.group))];
+      return {
+        ...BASE_OPTION,
+        tooltip: { ...BASE_OPTION.tooltip, trigger: 'item' },
+        xAxis: { type: 'value', splitLine: { lineStyle: { color: '#1e293b' } } },
+        yAxis: { type: 'value', splitLine: { lineStyle: { color: '#1e293b' } } },
+        series: groups.map((g, i) => ({
+          type: 'scatter' as const, name: g || 'Items',
+          data: agg.scatter_data!.filter(p => p.group === g).map(p => [p.x, p.y]),
+          itemStyle: { color: paletteColor(i) },
+        })),
+      };
+    }
+
+    // When scatter was requested but backend fell back to bar (non-numeric fields),
+    // render bar data as categorical scatter dots rather than bars.
+    if (axisType === 'scatter' && agg.series?.length) {
+      return {
+        ...BASE_OPTION,
+        tooltip: { ...BASE_OPTION.tooltip, trigger: 'item' },
+        xAxis: {
+          type: 'category', data: agg.x_axis,
+          axisLine: { lineStyle: { color: '#1e293b' } },
+          axisTick: { show: false },
+          axisLabel: { color: '#475569', fontSize: 11, rotate: agg.x_axis.length > 6 ? 30 : 0, interval: 0 },
+          splitLine: { show: false },
+        },
+        yAxis: {
+          type: 'value',
+          splitLine: { lineStyle: { color: '#1e293b' } },
+          axisLabel: { color: '#475569', fontSize: 11 },
+        },
+        series: agg.series.map((s, i) => ({
+          type: 'scatter' as const,
+          name: s.name,
+          data: s.data,
+          symbolSize: 9,
+          itemStyle: { color: paletteColor(i), opacity: 0.85 },
+        })),
+      };
+    }
+
+    return {
+      ...BASE_OPTION,
+      tooltip: { ...BASE_OPTION.tooltip, trigger: 'axis' },
+      xAxis: { type: 'category', data: agg.x_axis, axisLine: { lineStyle: { color: '#1e293b' } },
+               axisLabel: { color: '#475569', fontSize: 11 } },
+      yAxis: { type: 'value', splitLine: { lineStyle: { color: '#1e293b' } },
+               axisLabel: { color: '#475569', fontSize: 11 } },
+      series: agg.series.map((s, i) => ({
+        type:  s.chart_type as 'bar' | 'line',
+        name:  s.name,
+        data:  s.data,
+        ...(s.stack ? { stack: s.stack } : {}),
+        ...(s.chart_type === 'bar'
+          ? { itemStyle: { color: paletteGradient(i) }, barMaxWidth: 40 }
+          : { smooth: true, showSymbol: false, lineStyle: { color: paletteColor(i), width: 2 } }),
+      })),
+    };
+  });
 
   // - Field resolver -----------------------------------------------------------
   // display_fields contain display names (e.g. "Assignee", "Resolved", "Story Points")
@@ -120,27 +311,39 @@
     return new Date(y, mo - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
-  interface FilterInfo { values: string[]; isDate: boolean }
+  const MAX_FILTER_VALUES = 100;
+
+  interface FilterInfo { values: string[]; counts: Record<string, number>; isDate: boolean }
 
   const filterableMap = $derived.by((): Record<string, FilterInfo> => {
     const map: Record<string, FilterInfo> = {};
     if (!issues.length) return map;
+    const backendCounts = chartStore.aggregated?.field_counts ?? null;
     for (const key of displayFields) {
       const sample  = resolveIssueField(issues.find(i => resolveIssueField(i, key) != null) ?? {}, key);
       const dateCol = isDateLike(key, sample);
-      const keys    = issues.map(i => {
-        const v = resolveIssueField(i, key);
-        if (v == null || v === '') return 'Not set';
-        if (Array.isArray(v)) return v.length ? fmtCell(key, v) : 'Not set';
-        if (dateCol) return toDateKey(String(v)) ?? 'Not set';
-        return String(v);
-      });
-      const values = [...new Set(keys)].sort((a, b) => {
+
+      // Prefer backend-computed counts (normalized via pandas clean_names + flatten)
+      const counts: Record<string, number> = backendCounts?.[key] ?? (() => {
+        const c: Record<string, number> = {};
+        for (const issue of issues) {
+          const v = resolveIssueField(issue, key);
+          let label: string;
+          if (v == null || v === '') label = 'Not set';
+          else if (Array.isArray(v)) label = v.length ? fmtCell(key, v) : 'Not set';
+          else if (dateCol) label = toDateKey(String(v)) ?? 'Not set';
+          else label = String(v);
+          c[label] = (c[label] ?? 0) + 1;
+        }
+        return c;
+      })();
+
+      const values = Object.keys(counts).sort((a, b) => {
         if (a === 'Not set') return 1;
         if (b === 'Not set') return -1;
         return a.localeCompare(b);
-      });
-      if (values.length >= 2) map[key] = { values, isDate: dateCol };
+      }).slice(0, MAX_FILTER_VALUES);
+      if (values.length >= 2) map[key] = { values, counts, isDate: dateCol };
     }
     return map;
   });
@@ -176,6 +379,12 @@
     // Auto charts always built from the full (or filtered) issue set
     const src  = reactToFilters && hasActiveFilters ? filteredIssues : issues;
     const auto = buildAllSpecs(src, features.charts.maxItems, features.charts.animation);
+
+    // Aggregated result from axis selectors takes highest priority
+    if (aggregatedOption) {
+      const label = chartStore.aggregated?.title ?? chartStore.chartSpec?.title ?? 'Chart';
+      return { explicit: { label, icon: axisType, option: aggregatedOption }, ...auto };
+    }
 
     if (chartStore.chartSpec) {
       // Backend provided an explicit spec — show it first, keep all auto tabs
@@ -265,7 +474,12 @@
   let tableMode = $state<'table' | 'hierarchy'>('table');
 
   $effect(() => {
-    function onDoc(e: MouseEvent) { if (!(e.target as Element).closest('.cv-col-filter')) openFilter = null; }
+    function onDoc(e: MouseEvent) {
+      if (!(e.target as Element).closest('.cv-col-filter')) {
+        openFilter   = null;
+        openAxisMenu = null;
+      }
+    }
     document.addEventListener('click', onDoc);
     return () => document.removeEventListener('click', onDoc);
   });
@@ -399,6 +613,125 @@
               </button>
             {/each}
           </div>
+
+          <!-- Axis selectors (only when issues are loaded) -->
+          {#if issues.length}
+            <!-- X-axis -->
+            <div class="cv-col-filter cv-axis-sel">
+              <button
+                class="cv-react-btn"
+                class:active={!!axisX}
+                onclick={() => { openAxisMenu = openAxisMenu === 'x' ? null : 'x'; axisSearch = ''; }}
+                title="Select X axis field"
+              >
+                X: {axisX || '—'}
+                <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                  <path d="M1.5 3l2.5 2.5L6.5 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                </svg>
+              </button>
+              {#if openAxisMenu === 'x'}
+                <div class="col-filter-menu cv-axis-menu">
+                  <div class="col-filter-head">X Axis</div>
+                  {#if allFields.length > 8}
+                    <div class="col-filter-search">
+                      <input
+                        class="col-filter-input"
+                        type="text"
+                        bind:value={axisSearch}
+                        placeholder="Search fields…"
+                        onclick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  {/if}
+                  <div class="col-filter-list">
+                    {#each allFields.filter(f => !axisSearch || f.toLowerCase().includes(axisSearch.toLowerCase())) as f}
+                      <button
+                        class="col-filter-item"
+                        class:checked={axisX === f}
+                        onclick={() => { axisX = f; openAxisMenu = null; }}
+                      >
+                        <span class="col-filter-val">{f}</span>
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+            </div>
+
+            <!-- Y-axis -->
+            <div class="cv-col-filter cv-axis-sel">
+              <button
+                class="cv-react-btn"
+                class:active={axisY !== 'count'}
+                onclick={() => { openAxisMenu = openAxisMenu === 'y' ? null : 'y'; axisSearch = ''; }}
+                title="Select Y axis field"
+              >
+                Y: {axisY}
+                <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                  <path d="M1.5 3l2.5 2.5L6.5 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                </svg>
+              </button>
+              {#if openAxisMenu === 'y'}
+                <div class="col-filter-menu cv-axis-menu">
+                  <div class="col-filter-head">Y Axis</div>
+                  <div class="col-filter-list">
+                    {#each yFields as f}
+                      <button
+                        class="col-filter-item"
+                        class:checked={axisY === f}
+                        onclick={() => {
+                          axisY = f;
+                          openAxisMenu = null;
+                          if (f !== 'count' && !numericFieldSet.has(f) && axisType === 'bar') {
+                            axisType = 'stacked_bar';
+                          }
+                        }}
+                      >
+                        <span class="col-filter-val">{f}</span>
+                        {#if f !== 'count' && !numericFieldSet.has(f)}
+                          <span class="cv-group-badge">group</span>
+                        {/if}
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+            </div>
+
+            <!-- Chart type -->
+            <div class="cv-col-filter cv-axis-sel">
+              <button
+                class="cv-react-btn"
+                onclick={() => { openAxisMenu = openAxisMenu === 'type' ? null : 'type'; }}
+                title="Select chart type"
+              >
+                {axisType}
+                <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                  <path d="M1.5 3l2.5 2.5L6.5 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                </svg>
+              </button>
+              {#if openAxisMenu === 'type'}
+                <div class="col-filter-menu cv-axis-menu">
+                  <div class="col-filter-head">Chart Type</div>
+                  <div class="col-filter-list">
+                    {#each CHART_TYPES as t}
+                      <button
+                        class="col-filter-item"
+                        class:checked={axisType === t}
+                        onclick={() => { axisType = t; openAxisMenu = null; }}
+                      >
+                        <span class="col-filter-val">{t}</span>
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+            </div>
+
+            {#if chartStore.aggregating}
+              <span class="cv-agg-spinner" title="Aggregating…">↻</span>
+            {/if}
+          {/if}
 
           <!-- React-to-filters toggle -->
           <button
@@ -587,13 +920,7 @@
                                     </span>
                                     <span class="col-filter-val">{fmtDateKey(val)}</span>
                                     <span class="col-filter-count">
-                                      {issues.filter(i => {
-                                        const raw = resolveIssueField(i, col);
-                                        const v = (raw == null || raw === '') ? 'Not set'
-                                          : colInfo.isDate ? (toDateKey(String(raw)) ?? 'Not set')
-                                          : String(raw);
-                                        return v === val;
-                                      }).length}
+                                      {colInfo.counts[val] ?? 0}
                                     </span>
                                   </button>
                                 {/each}
@@ -1272,5 +1599,40 @@
     color: #1e293b;
     line-height: 1.6;
     max-width: 260px;
+  }
+
+  /* ── Axis selectors ──────────────────────────────────────────────────────── */
+  .cv-axis-sel { position: relative; }
+
+  .cv-axis-menu {
+    top: calc(100% + 4px);
+    left: 0;
+    transform: none;
+    min-width: 180px;
+  }
+
+  .cv-agg-spinner {
+    font-size: 13px;
+    color: #818cf8;
+    flex-shrink: 0;
+    animation: spin 0.7s linear infinite;
+    display: inline-block;
+    line-height: 1;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Y-axis group badge ──────────────────────────────────────────────────── */
+  .cv-group-badge {
+    font-size: 8px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #334155;
+    background: rgba(129, 140, 248, 0.08);
+    border: 1px solid rgba(129, 140, 248, 0.15);
+    border-radius: 3px;
+    padding: 1px 4px;
+    flex-shrink: 0;
   }
 </style>

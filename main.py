@@ -35,7 +35,7 @@ import httpx
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -54,6 +54,7 @@ def _parse_args() -> argparse.Namespace:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--local", action="store_true", help=f"Connect to AtlasMind on {ATLASMIND_BACKEND_HOST}:{ATLASMIND_BACKEND_PORT} (default)")
     group.add_argument("--external", metavar="IP", help=f"Connect to AtlasMind at the given IP address (port {ATLASMIND_BACKEND_PORT})")
+    parser.add_argument("--no-aggregation", action="store_true", help="Disable the pandas aggregation pipeline (default: enabled)")
     return parser.parse_args()
 
 _args = _parse_args()
@@ -70,6 +71,16 @@ else:
 HOST = os.environ.get("HOST", _DEFAULT_HOST)
 FRONTEND_PORT = int(os.environ.get("PORT", _DEFAULT_PORT))
 
+# Aggregation pipeline: enabled by default; disable via --no-aggregation or AGGREGATION=false
+_env_agg = os.environ.get("AGGREGATION", "").lower()
+AGGREGATION_ENABLED: bool = (
+    False if _env_agg in {"0", "false", "off"}
+    else not _args.no_aggregation
+)
+
+if AGGREGATION_ENABLED:
+    from aggregator import aggregate as _aggregate, AggregateRequest as _AggregateRequest
+
 # CORS origins: default to Vite dev server; override in production
 _default_origins = f"http://{VITE_DEV_HOST}:{VITE_DEV_PORT},http://127.0.0.1:{VITE_DEV_PORT}"
 _raw_origins = os.environ.get("ALLOWED_ORIGINS", _default_origins)
@@ -78,6 +89,7 @@ ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 print(f"[AtlasMind] Backend URL  : {ATLASMIND_URL}")
 print(f"[AtlasMind] Listening on : {HOST}:{FRONTEND_PORT}")
 print(f"[AtlasMind] CORS origins : {ALLOWED_ORIGINS}")
+print(f"[AtlasMind] Aggregation  : {'enabled' if AGGREGATION_ENABLED else 'disabled'}")
 
 DIST_DIR = Path(__file__).parent / "jira-viz" / "dist"
 
@@ -166,6 +178,26 @@ async def forward_event(req: EventRequest):
         return {"request_id": req.request_id, "accepted": False, "detail": "backend not reachable"}
     except Exception as exc:
         return {"request_id": req.request_id, "accepted": False, "detail": str(exc)}
+
+
+@app.post("/api/aggregate")
+async def run_aggregate(req: dict):
+    """Pre-aggregate issues server-side using pandas. Returns chart-ready data.
+    Returns 503 when disabled via --no-aggregation or AGGREGATION=false."""
+    if not AGGREGATION_ENABLED:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Aggregation pipeline disabled. Restart without --no-aggregation to enable."},
+        )
+    try:
+        parsed = _AggregateRequest(**req)
+        return _aggregate(parsed)
+    except Exception as exc:
+        return {
+            "error": str(exc), "chart_type": req.get("chart_spec", {}).get("type", ""),
+            "x_axis": [], "series": [], "pie_data": None, "scatter_data": None,
+            "total_issues": 0, "fields_resolved": {}, "warnings": [str(exc)],
+        }
 
 
 @app.get("/api/meta")
