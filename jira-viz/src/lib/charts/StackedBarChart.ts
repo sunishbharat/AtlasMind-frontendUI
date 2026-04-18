@@ -14,7 +14,7 @@
 
 import type { EChartsOption } from 'echarts';
 import type { ApiIssue } from './chartStore.svelte.js';
-import { BASE_OPTION, paletteColor } from './theme.js';
+import { BASE_OPTION, paletteColor, paletteGradient } from './theme.js';
 
 interface SeriesEntry { name: string; data: number[] }
 
@@ -118,6 +118,8 @@ export class StackedBarChart {
 
     if (!cats.length || !series.length) return null;
 
+    const colData = series.map(s => s.data.slice(0, cats.length));
+
     return {
       ...BASE_OPTION,
       animation: this._animation,
@@ -165,14 +167,16 @@ export class StackedBarChart {
         name: s.name,
         type: 'bar' as const,
         stack: 'total',
-        data: s.data.slice(0, this._maxCats),
-        itemStyle: { color: paletteColor(i) },
+        data: colData[i].map((v) => ({
+          value: v,
+          itemStyle: { color: paletteGradient(i, true) },
+        })),
         barMaxWidth: 44,
         label: {
           show: true, position: 'inside' as const,
           color: 'rgba(255,255,255,0.85)', fontSize: 9,
           fontFamily: 'Inter, system-ui, sans-serif',
-          formatter: (p: { value: number }) => (p.value > 0 ? String(p.value) : ''),
+          formatter: (p: { value: number }) => (p.value > 0 ? (Number.isInteger(p.value) ? String(p.value) : p.value.toFixed(2).replace(/\.?0+$/, '')) : ''),
         },
         emphasis: { focus: 'series' as const },
       })),

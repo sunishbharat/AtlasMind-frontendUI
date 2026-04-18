@@ -270,13 +270,13 @@
 
   .cols {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0 72px;
-    padding: 28px 32px 32px;
+    grid-template-columns: repeat(3, minmax(0, 150px));
+    gap: 0 54px;
+    padding: 20px 24px 24px;
     position: relative; z-index: 1;
   }
 
-  .col { display: flex; flex-direction: column; gap: 10px; }
+  .col { display: flex; flex-direction: column; gap: 8px; }
 
   .col-label {
     font-size: 10px; font-weight: 700; letter-spacing: 0.12em;
@@ -286,10 +286,10 @@
 
   .card {
     all: unset; cursor: pointer;
-    display: flex; flex-direction: column; gap: 5px;
-    padding: 11px 13px; background: #131e2e;
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 8px 10px; background: #131e2e;
     border: 1px solid #1e293b; border-left: 3px solid var(--c);
-    border-radius: 7px; transition: opacity 0.18s, box-shadow 0.22s ease-out, background 0.18s, transform 0.18s ease-out;
+    border-radius: 5px; transition: opacity 0.18s, box-shadow 0.22s ease-out, background 0.18s, transform 0.18s ease-out;
   }
 
   .card:hover, .card.hl {
@@ -305,34 +305,34 @@
 
   .card.dim { opacity: 0.15; transform: none; }
 
-  .key { font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; color: #475569; font-family: 'Consolas', monospace; }
-  .title { font-size: 12.5px; font-weight: 500; color: #cbd5e1; line-height: 1.45; }
+  .key { font-size: 7.5px; font-weight: 700; letter-spacing: 0.06em; color: #475569; font-family: 'Consolas', monospace; }
+  .title { font-size: 9.5px; font-weight: 500; color: #cbd5e1; line-height: 1.4; word-break: break-word; overflow-wrap: break-word; }
   .card.hl .title { color: #f1f5f9; }
-  .meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
-  .badge { font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; }
-  .pts { font-size: 9.5px; color: #475569; background: #1e293b; padding: 1px 7px; border-radius: 999px; border: 1px solid #334155; }
+  .meta { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+  .badge { font-size: 7.5px; font-weight: 700; letter-spacing: 0.04em; }
+  .pts { font-size: 7.5px; color: #475569; background: #1e293b; padding: 1px 5px; border-radius: 999px; border: 1px solid #334155; }
 
   /* ── Density: compact (9-20 items per column) ───────────────────────────── */
-  .density-compact .cols  { padding: 16px 20px; gap: 0 48px; }
-  .density-compact .col   { gap: 6px; }
+  .density-compact .cols  { padding: 12px 16px; gap: 0 36px; }
+  .density-compact .col   { gap: 5px; }
   .density-compact .col-label { margin-bottom: 3px; }
-  .density-compact .card  { padding: 7px 10px; gap: 3px; }
-  .density-compact .title { font-size: 11px; }
-  .density-compact .key   { font-size: 8.5px; }
-  .density-compact .meta  { margin-top: 1px; gap: 5px; }
-  .density-compact .badge { font-size: 8.5px; }
-  .density-compact .pts   { font-size: 8.5px; }
+  .density-compact .card  { padding: 6px 8px; gap: 3px; }
+  .density-compact .title { font-size: 8.5px; }
+  .density-compact .key   { font-size: 7px; }
+  .density-compact .meta  { margin-top: 1px; gap: 4px; }
+  .density-compact .badge { font-size: 7px; }
+  .density-compact .pts   { font-size: 7px; }
 
   /* ── Density: dense (21+ items per column) ──────────────────────────────── */
-  .density-dense .cols  { padding: 8px 14px; gap: 0 32px; }
+  .density-dense .cols  { padding: 6px 10px; gap: 0 24px; }
   .density-dense .col   { gap: 3px; }
-  .density-dense .col-label { margin-bottom: 2px; font-size: 9px; }
-  .density-dense .card  { padding: 4px 8px; gap: 2px; border-radius: 5px; }
-  .density-dense .title { font-size: 9.5px; line-height: 1.3; }
-  .density-dense .key   { font-size: 7.5px; }
-  .density-dense .meta  { margin-top: 0; gap: 4px; }
-  .density-dense .badge { font-size: 7.5px; }
-  .density-dense .pts   { font-size: 7.5px; padding: 0 5px; }
+  .density-dense .col-label { margin-bottom: 2px; font-size: 8.5px; }
+  .density-dense .card  { padding: 3px 6px; gap: 2px; border-radius: 4px; }
+  .density-dense .title { font-size: 8px; line-height: 1.3; }
+  .density-dense .key   { font-size: 6.5px; }
+  .density-dense .meta  { margin-top: 0; gap: 3px; }
+  .density-dense .badge { font-size: 6.5px; }
+  .density-dense .pts   { font-size: 6.5px; padding: 0 4px; }
 
   /* TODO: remove — temporary stacked bar demo */
   .demo-stacked {

@@ -92,13 +92,21 @@
     return fmtSingle(val);
   }
 
+  function fmtNum(n: number): string {
+    return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '');
+  }
+
   function fmtSingle(val: unknown): string {
     if (val == null) return '—';
+    if (typeof val === 'number') return isFinite(val) ? fmtNum(val) : '—';
     if (typeof val === 'string') {
       // Greenhopper sprint toString
       if (val.includes('com.atlassian.greenhopper') || val.includes('Sprint@')) {
         return val.match(/\bname=([^,\]]+)/)?.[1]?.trim() ?? val;
       }
+      // Numeric strings (e.g. "3.14159") — round to 2dp
+      const n = Number(val);
+      if (val !== '' && isFinite(n)) return fmtNum(n);
       return val || '—';
     }
     if (typeof val === 'object') {

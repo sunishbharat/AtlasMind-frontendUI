@@ -216,14 +216,17 @@
         ...(s.stack ? { stack: s.stack } : {}),
         ...(s.chart_type === 'bar'
           ? {
-              itemStyle: { color: paletteGradient(i) },
-              barMaxWidth: 40,
+              itemStyle: { color: paletteGradient(i), borderRadius: s.stack ? [0, 0, 0, 0] as const : [12, 12, 0, 0] as const },
+              barMaxWidth: 40, barMinHeight: 4,
+              showBackground: !s.stack,
+              backgroundStyle: { color: 'rgba(255,255,255,0.04)', borderRadius: [12, 12, 0, 0] as const },
               label: s.stack
-                ? { show: true, position: 'inside' as const, color: 'rgba(255,255,255,0.85)', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: (p: { value: number | null }) => (p.value && p.value > 0 ? String(p.value) : '') }
-                : { show: true, position: 'top'    as const, color: '#94a3b8',                fontSize: 10, fontFamily: 'Inter, system-ui, sans-serif', formatter: '{c}' },
+                ? { show: true, position: 'inside' as const, color: 'rgba(255,255,255,0.85)', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: (p: { value: number | null }) => (p.value && p.value > 0 ? (Number.isInteger(p.value) ? String(p.value) : p.value.toFixed(2).replace(/\.?0+$/, '')) : '') }
+                : { show: true, position: 'top'    as const, color: '#94a3b8',                fontSize: 10, fontFamily: 'Inter, system-ui, sans-serif', formatter: (p: { value: number | null }) => p.value != null ? fmtNum(p.value) : '' },
+              emphasis: { itemStyle: { shadowBlur: 16, shadowColor: 'rgba(129,140,248,0.45)', opacity: 1 } },
             }
           : { smooth: true, showSymbol: false, lineStyle: { color: paletteColor(i), width: 2 },
-              label: { show: agg.x_axis.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: '{c}' } }),
+              label: { show: agg.x_axis.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: (p: { value: number | null }) => p.value != null ? fmtNum(p.value) : '' } }),
       })),
     };
   });
@@ -279,8 +282,13 @@
     return String(val);
   }
 
+  function fmtNum(n: number): string {
+    return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '');
+  }
+
   function fmtCell(col: string, val: unknown): string {
     if (val == null || val === '') return '—';
+    if (typeof val === 'number') return isFinite(val) ? fmtNum(val) : '—';
     if (Array.isArray(val)) {
       if (val.length === 0) return '—';
       // Sprint-like arrays: each element is a string or object — extract names
@@ -296,6 +304,9 @@
       return (val as unknown[]).join(', ');
     }
     if (typeof val === 'object') return JSON.stringify(val);
+    // Numeric strings (e.g. effort_days returned as "3.14159")
+    const n = Number(val);
+    if (String(val) !== '' && isFinite(n)) return fmtNum(n);
     return String(val);
   }
 
@@ -314,7 +325,7 @@
   }
 
   function fmtDateKey(key: string): string {
-    if (!key || key === 'Not set') return key ?? 'Not set';
+    if (!key || key === 'Empty') return key ?? 'Empty';
     const m = key.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!m) return key;
     const [, y, mo, d] = m.map(Number);
@@ -333,24 +344,27 @@
       const sample  = resolveIssueField(issues.find(i => resolveIssueField(i, key) != null) ?? {}, key);
       const dateCol = isDateLike(key, sample);
 
-      // Prefer backend-computed counts (normalized via pandas clean_names + flatten)
+      // Aggregator engine owns label normalization — use its output directly.
+      // Local fallback (demo mode / no aggregation) also produces 'Empty' for null values.
       const counts: Record<string, number> = backendCounts?.[key] ?? (() => {
         const c: Record<string, number> = {};
         for (const issue of issues) {
           const v = resolveIssueField(issue, key);
           let label: string;
-          if (v == null || v === '') label = 'Not set';
-          else if (Array.isArray(v)) label = v.length ? fmtCell(key, v) : 'Not set';
-          else if (dateCol) label = toDateKey(String(v)) ?? 'Not set';
+          if (v == null || v === '') label = 'Empty';
+          else if (Array.isArray(v)) label = v.length ? fmtCell(key, v) : 'Empty';
+          else if (dateCol) label = toDateKey(String(v)) ?? 'Empty';
           else label = String(v);
           c[label] = (c[label] ?? 0) + 1;
         }
         return c;
       })();
 
+      const EMPTY_VALS = new Set(['Empty', '—']);
       const values = Object.keys(counts).sort((a, b) => {
-        if (a === 'Not set') return 1;
-        if (b === 'Not set') return -1;
+        const ae = EMPTY_VALS.has(a), be = EMPTY_VALS.has(b);
+        if (ae && !be) return -1;
+        if (!ae && be) return 1;
         return a.localeCompare(b);
       }).slice(0, MAX_FILTER_VALUES);
       if (values.length >= 2) map[key] = { values, counts, isDate: dateCol };
@@ -370,8 +384,8 @@
         const info = filterableMap[key];
         const raw  = resolveIssueField(issue, key);
         let val: string;
-        if (raw == null || raw === '') val = 'Not set';
-        else if (info?.isDate) val = toDateKey(String(raw)) ?? 'Not set';
+        if (raw == null || raw === '') val = 'Empty';
+        else if (info?.isDate) val = toDateKey(String(raw)) ?? 'Empty';
         else val = String(raw);
         return vals.has(val);
       }),
@@ -452,7 +466,7 @@
     const orderMatch = raw.match(/(\s+ORDER\s+BY\s+.+)$/i);
     const orderClause = orderMatch ? orderMatch[1] : '';
     const baseJql    = orderMatch ? raw.slice(0, orderMatch.index) : raw;
-    const isEmpty      = value === '—' || value === 'Not set' || value === '';
+    const isEmpty      = value === '—' || value === 'Empty' || value === '';
     const filterClause = isEmpty ? `${field} is EMPTY` : `${field} = "${value}"`;
     const jql = baseJql ? `${baseJql} AND ${filterClause}${orderClause}` : filterClause;
     window.open(`${baseUrl}/issues/?jql=${encodeURIComponent(jql)}`, '_blank', 'noopener');
@@ -472,6 +486,10 @@
   function clearColumnFilter(field: string): void {
     const { [field]: _, ...rest } = activeFilters;
     activeFilters = rest;
+  }
+
+  function selectAllFilter(field: string, values: string[]): void {
+    activeFilters = { ...activeFilters, [field]: new Set(values) };
   }
 
   function clearAllFilters(): void { activeFilters = {}; }
@@ -940,12 +958,33 @@
                                     />
                                   </div>
                                 {/if}
+                                {#if colInfo}
+                                {@const visibleVals = colInfo.values.filter(v => !filterSearch || fmtDateKey(v).toLowerCase().includes(filterSearch.toLowerCase()))}
+                                {@const allSelected = visibleVals.length > 0 && visibleVals.every(v => colFilter?.has(v))}
+                                <div class="col-filter-select-all">
+                                  <button
+                                    class="col-filter-item col-filter-item--all"
+                                    class:checked={allSelected}
+                                    onclick={() => allSelected ? clearColumnFilter(col) : selectAllFilter(col, visibleVals)}
+                                  >
+                                    <span class="col-filter-check" class:checked={allSelected}>
+                                      {#if allSelected}
+                                        <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                                          <path d="M1 4l2 2 4-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                      {/if}
+                                    </span>
+                                    <span class="col-filter-val">{allSelected ? 'Deselect all' : 'Select all'}</span>
+                                    <span class="col-filter-count">{visibleVals.length}</span>
+                                  </button>
+                                </div>
                                 <div class="col-filter-list">
-                                {#each colInfo.values.filter(v => !filterSearch || fmtDateKey(v).toLowerCase().includes(filterSearch.toLowerCase())) as val}
+                                {#each visibleVals as val}
                                   {@const checked = colFilter?.has(val) ?? false}
                                   <button
                                     class="col-filter-item"
                                     class:checked
+                                    class:empty-val={val === '—' || val === 'Empty'}
                                     onclick={() => toggleFilterValue(col, val)}
                                   >
                                     <span class="col-filter-check" class:checked>
@@ -962,6 +1001,7 @@
                                   </button>
                                 {/each}
                                 </div>
+                                {/if}
                               </div>
                             {/if}
                           </div>
@@ -1372,6 +1412,12 @@
     overflow: hidden;
   }
 
+  .col-filter-select-all {
+    border-bottom: 1px solid #1e293b;
+  }
+  .col-filter-item--all { color: #64748b; font-style: italic; }
+  .col-filter-item--all.checked { color: #818cf8; font-style: normal; }
+
   .col-filter-list {
     max-height: 200px;
     overflow-y: auto;
@@ -1459,6 +1505,7 @@
   }
 
   .col-filter-val { flex: 1; }
+  .col-filter-item.empty-val .col-filter-val { color: #475569; font-style: italic; }
 
   .col-filter-count {
     font-size: 9px;

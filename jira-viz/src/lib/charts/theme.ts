@@ -8,7 +8,7 @@ import type { EChartsOption } from 'echarts';
 export const PALETTE: [string, string][] = [
   ['#818cf8', '#4f46e5'],
   ['#34d399', '#059669'],
-  ['#f472b6', '#db2777'],
+  ['#2dd4bf', '#0d9488'],
   ['#fbbf24', '#d97706'],
   ['#60a5fa', '#2563eb'],
   ['#a78bfa', '#7c3aed'],

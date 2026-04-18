@@ -171,12 +171,24 @@ function sumByField(issues: ApiIssue[], valueField: string, groupField: string):
   return Object.entries(map).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
 }
 
+// -- Chart label value formatter ----------------------------------------------
+/** Round to 2 dp, strip trailing zeros. Integers stay whole. */
+const fmtV = (p: { value: number | null | undefined }): string => {
+  if (p.value == null) return '';
+  const n = p.value;
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '');
+};
+
 // -- Chart builders -----------------------------------------------------------
 
 export function buildBar(entries: [string, number][], title: string, maxItems = 20, animation = true): EChartsOption {
   const slice      = entries.slice(0, maxItems);
   const categories = slice.map(([k]) => k);
-  const values     = slice.map(([, v], i) => ({ value: v, itemStyle: { color: paletteGradient(i, true) } }));
+  const BR = [12, 12, 0, 0] as [number, number, number, number];
+  const values = slice.map(([, v], i) => ({
+    value: v,
+    itemStyle: { color: paletteGradient(i, true), borderRadius: BR },
+  }));
 
   return {
     ...BASE_OPTION,
@@ -200,9 +212,12 @@ export function buildBar(entries: [string, number][], title: string, maxItems = 
       minInterval: 1,
     },
     series: [{
-      type: 'bar', data: values, barMaxWidth: 44,
-      label: { show: true, position: 'top', color: '#94a3b8', fontSize: 10, fontFamily: 'Inter, system-ui, sans-serif', formatter: '{c}' },
-      emphasis: { itemStyle: { opacity: 0.8 } },
+      type: 'bar', data: values, barMaxWidth: 44, barMinHeight: 4,
+      borderRadius: [12, 12, 0, 0],
+      showBackground: true,
+      backgroundStyle: { color: 'rgba(255,255,255,0.04)', borderRadius: [12, 12, 0, 0] },
+      label: { show: true, position: 'top', color: '#94a3b8', fontSize: 10, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV },
+      emphasis: { itemStyle: { shadowBlur: 16, shadowColor: 'rgba(129,140,248,0.45)', opacity: 1 } },
     }],
   };
 }
@@ -345,8 +360,8 @@ export function buildTrend(issues: ApiIssue[], animation = true): EChartsOption 
       lineStyle: { color: '#818cf8', width: 2 },
       areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(129,140,248,0.25)' }, { offset: 1, color: 'rgba(129,140,248,0.02)' }] } },
     },
-    { name: 'Created', type: 'bar', data: createdData, barMaxWidth: 20, itemStyle: { color: 'rgba(129,140,248,0.4)' }, label: { show: labels.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: '{c}' } },
-    ...(resolvedData ? [{ name: 'Resolved', type: 'bar', data: resolvedData, barMaxWidth: 20, itemStyle: { color: 'rgba(52,211,153,0.5)' }, label: { show: labels.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: '{c}' } }] : []),
+    { name: 'Created', type: 'bar', data: createdData, barMaxWidth: 20, itemStyle: { color: 'rgba(129,140,248,0.4)' }, label: { show: labels.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV } },
+    ...(resolvedData ? [{ name: 'Resolved', type: 'bar', data: resolvedData, barMaxWidth: 20, itemStyle: { color: 'rgba(52,211,153,0.5)' }, label: { show: labels.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV } }] : []),
   ];
 
   const axisLabel = { color: '#475569', fontSize: 10, rotate: labels.length > 10 ? 30 : 0, interval: Math.max(0, Math.floor(labels.length / 8) - 1) };
@@ -427,7 +442,7 @@ export function buildGroupedTrend(
       symbolSize: 4,
       lineStyle: { color, width: 1.8 },
       itemStyle: { color },
-      label: { show: spine.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: '{c}' },
+      label: { show: spine.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV },
       emphasis: { focus: 'series' as const },
     };
   });
@@ -530,10 +545,10 @@ export function buildGroupedCategorical(
         symbol:      'circle',
         symbolSize:  4,
         lineStyle:   { color, width: 1.8 },
-        label: { show: categories.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: '{c}' },
+        label: { show: categories.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV },
       } : {
         barMaxWidth: 28,
-        label: { show: true, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: '{c}' },
+        label: { show: true, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV },
       }),
       itemStyle: { color },
       emphasis:  { focus: 'series' as const },

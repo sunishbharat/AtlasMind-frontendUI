@@ -236,7 +236,7 @@ class AggregationEngine:
             col = _to_snake(display_field)
             if col not in df.columns:
                 continue
-            mask &= df[col].fillna("Not set").astype(str).isin(values)
+            mask &= df[col].fillna("Empty").astype(str).isin(values)
         return df[mask]
 
     def _compute_field_counts(
@@ -253,7 +253,7 @@ class AggregationEngine:
                 continue
             counts: dict[str, int] = {
                 k: int(v)
-                for k, v in df[col].fillna("Not set").astype(str)
+                for k, v in df[col].fillna("Empty").astype(str)
                 .value_counts().items()
             }
             result[field] = counts
