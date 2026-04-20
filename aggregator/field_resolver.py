@@ -66,10 +66,14 @@ class FieldResolver:
         resolver = FieldResolver(issues)
         key, warnings = resolver.resolve("Assignee")
         # key -> "assignee", warnings -> []
+
+    Optionally accepts field_map (display name → raw Jira key) from the server response
+    so that custom fields like "Domain" → "customfield_1xxxx" resolve correctly.
     """
 
-    def __init__(self, issues: list[dict[str, Any]]) -> None:
+    def __init__(self, issues: list[dict[str, Any]], field_map: dict[str, str] | None = None) -> None:
         self._issues = issues
+        self._field_map: dict[str, str] = field_map or {}
         self._cache: dict[str, tuple[str, list[str]]] = {}
 
     @cached_property
@@ -97,6 +101,13 @@ class FieldResolver:
 
     def _resolve(self, hint: str) -> tuple[str, list[str]]:
         warnings: list[str] = []
+
+        # Step 0 - server-provided field_map (display name → raw Jira key)
+        if hint in self._field_map:
+            raw = self._field_map[hint]
+            if raw in self._all_keys:
+                return raw, warnings
+            warnings.append(f"field_map maps '{hint}' → '{raw}' but key not found in issues")
 
         # Step 1 - exact match
         if hint in self._all_keys:

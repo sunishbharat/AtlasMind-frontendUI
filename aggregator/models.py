@@ -26,6 +26,7 @@ class AggregateRequest(BaseModel):
     issues: list[dict[str, Any]]
     chart_spec: ChartSpecInput
     display_fields: list[str] | None = None      # fields to compute value-count histograms for
+    field_map: dict[str, str] | None = None      # display name → raw Jira key (e.g. "Domain" → "customfield_1xxxx")
     active_filters: dict[str, list[str]] | None = None  # display_field → [value, ...] to keep
     react_to_filters: bool = False               # when True, apply active_filters before aggregation
 

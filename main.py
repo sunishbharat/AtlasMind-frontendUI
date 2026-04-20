@@ -39,6 +39,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from aggregator.field_map import apply_field_map as _apply_field_map
 from config.defaults import (
     ATLASMIND_BACKEND_HOST,
     ATLASMIND_BACKEND_PORT,
@@ -150,7 +151,10 @@ async def run_query(req: QueryRequest):
         # Python single-quote format which the JS frontend cannot parse).
         content_type = resp.headers.get("content-type", "")
         if "application/json" in content_type:
-            return {"output": resp.json(), "error": None}
+            payload = resp.json()
+            if isinstance(payload, dict) and payload.get("field_map") and payload.get("issues"):
+                payload["issues"] = _apply_field_map(payload["issues"], payload["field_map"])
+            return {"output": payload, "error": None}
         return {"output": resp.text.strip(), "error": None}
 
     except httpx.ConnectError:

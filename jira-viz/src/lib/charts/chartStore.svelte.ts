@@ -47,6 +47,8 @@ export interface QueryResponse {
   examined?: number;
   answer?: string;
   display_fields?: string[];
+  /** Maps display name → raw Jira key for custom fields (e.g. "Domain" → "customfield_1xxxx"). */
+  field_map?: Record<string, string>;
   issues?: ApiIssue[];
   chart_spec?: ChartSpec;
   chartSpec?: ChartSpec;

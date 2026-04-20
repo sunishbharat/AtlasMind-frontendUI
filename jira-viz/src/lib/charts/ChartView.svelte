@@ -232,31 +232,13 @@
   });
 
   // - Field resolver -----------------------------------------------------------
-  // display_fields contain display names (e.g. "Assignee", "Resolved", "Story Points")
-  // but standard issue fields are snake_case (assignee, resolutiondate, story_points).
-  // Intent fields (e.g. "Story Points") are stored as-is in the issue object.
-  const DISPLAY_ALIASES: Record<string, string> = {
-    'resolved':         'resolutiondate',
-    'resolution_date':  'resolutiondate',
-    'due_date':         'duedate',
-    'issue_type':       'issuetype',
-    'epic_link':        'epic_link',
-    'level_of_effort':  'effort_days',
-    'effort':           'effort_days',
-  };
-
+  // Contract: every display_fields entry is the exact key in the issue dict.
+  // Keys are renamed from customfield_1xxxx → display name by main.py before reaching here.
+  // Lowercase fallback covers demo-mode hardcoded data (status, assignee, etc.).
   function resolveIssueField(issue: ApiIssue, displayName: string): unknown {
-    // 1. Exact match - handles intent fields like "Story Points"
     if (displayName in issue) return issue[displayName];
-    // 2. Lowercase match - handles "Summary" → "summary", "Assignee" → "assignee"
     const lower = displayName.toLowerCase();
     if (lower in issue) return issue[lower];
-    // 3. Snake_case - handles "Story Points" → "story_points" if not stored as intent field
-    const snake = lower.replace(/ /g, '_');
-    if (snake in issue) return issue[snake];
-    // 4. Hardcoded aliases for fields whose display name differs from the issue key
-    const alias = DISPLAY_ALIASES[snake] ?? DISPLAY_ALIASES[lower];
-    if (alias && alias in issue) return issue[alias];
     return undefined;
   }
 

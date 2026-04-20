@@ -108,9 +108,9 @@ class AggregationEngine:
         full_df = df  # unfiltered — used for field_counts so the filter UI always shows all choices
 
         if request.react_to_filters and request.active_filters:
-            df = self._apply_filters(full_df, request.active_filters)
+            df = self._apply_filters(full_df, request.active_filters, request.field_map)
 
-        resolver = FieldResolver(request.issues)
+        resolver = FieldResolver(request.issues, field_map=request.field_map)
         spec = request.chart_spec
         chart_type = _normalise_type(spec.type)
         title = spec.title or f"{chart_type.replace('_', ' ').title()} Chart"
@@ -166,7 +166,7 @@ class AggregationEngine:
         result.warnings = all_warnings + result.warnings
         result.fields_resolved = fields_resolved
         result.total_issues = len(request.issues)
-        result.field_counts = self._compute_field_counts(full_df, request.display_fields or [])
+        result.field_counts = self._compute_field_counts(full_df, request.display_fields or [], request.field_map)
         result.filtered_count = len(df) if (request.react_to_filters and request.active_filters) else None
         return result
 
@@ -224,7 +224,8 @@ class AggregationEngine:
         return None
 
     def _apply_filters(
-        self, df: pd.DataFrame, active_filters: dict[str, list[str]]
+        self, df: pd.DataFrame, active_filters: dict[str, list[str]],
+        field_map: dict[str, str] | None = None,
     ) -> pd.DataFrame:
         """Row-filter df to rows matching all active_filters (AND logic, OR within each field)."""
         if df.empty or not active_filters:
@@ -234,13 +235,15 @@ class AggregationEngine:
             if not values:
                 continue
             col = _to_snake(display_field)
+            if col not in df.columns and field_map and display_field in field_map:
+                col = _to_snake(field_map[display_field])
             if col not in df.columns:
                 continue
             mask &= df[col].fillna("Empty").astype(str).isin(values)
         return df[mask]
 
     def _compute_field_counts(
-        self, df: pd.DataFrame, display_fields: list[str]
+        self, df: pd.DataFrame, display_fields: list[str], field_map: dict[str, str] | None = None
     ) -> dict[str, dict[str, int]]:
         """Return value-count histogram for each requested display field."""
         result: dict[str, dict[str, int]] = {}
@@ -249,6 +252,9 @@ class AggregationEngine:
             if col not in df.columns:
                 # Try the raw field name after clean_names normalisation
                 col = field
+            if col not in df.columns and field_map and field in field_map:
+                # field_map maps display name → raw Jira key; clean_names converts it to snake
+                col = _to_snake(field_map[field])
             if col not in df.columns:
                 continue
             counts: dict[str, int] = {
