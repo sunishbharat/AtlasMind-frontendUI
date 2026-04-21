@@ -286,8 +286,8 @@
 
   th {
     padding: 10px 14px; text-align: left;
-    font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
-    text-transform: uppercase; color: #334155; white-space: nowrap;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: #4e6884; white-space: nowrap;
   }
 
   .row { border-bottom: 1px solid #0f172a; cursor: default; transition: background 0.1s; }
@@ -308,37 +308,37 @@
 
   .row-key {
     font-family: 'Consolas', monospace; font-size: 10.5px; font-weight: 700;
-    color: #475569; white-space: nowrap; text-decoration: none;
+    color: #e2e8f0; white-space: nowrap; text-decoration: none;
   }
   a.row-key { color: #818cf8; }
   a.row-key:hover { text-decoration: underline; }
 
-  .row-summary { color: #cbd5e1; font-weight: 450; position: relative; display: inline-block; }
-  .row-hl .row-summary { color: #f1f5f9; }
+  .row-summary { color: #e2e8f0; font-weight: 450; position: relative; display: inline-block; }
+  .row-hl .row-summary { color: #ffffff; }
 
   .indent-line {
     position: absolute; top: 50%; transform: translateY(-50%);
-    width: 10px; height: 1px; background: #334155;
+    width: 10px; height: 1px; background: #2d4a66;
   }
 
   .status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
 
-  .pts-cell { color: #64748b; font-weight: 600; text-align: center; }
+  .pts-cell { color: #e2e8f0; font-weight: 600; text-align: center; }
 
-  .assignee-cell { color: #94a3b8; display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .assignee-cell { color: #e2e8f0; display: flex; align-items: center; gap: 7px; white-space: nowrap; }
 
   .avatar {
     display: inline-flex; align-items: center; justify-content: center;
     width: 20px; height: 20px; border-radius: 50%;
     background: #1e293b; border: 1px solid #334155;
-    font-size: 8px; font-weight: 700; color: #64748b; flex-shrink: 0;
+    font-size: 8px; font-weight: 700; color: #94a3b8; flex-shrink: 0;
   }
 
-  .parent-key { font-family: 'Consolas', monospace; font-size: 10px; color: #475569; }
-  .none { color: #1e293b; }
+  .parent-key { font-family: 'Consolas', monospace; font-size: 10px; color: #94a3b8; }
+  .none { color: #2d4a66; }
 
-  .cell-val { color: #94a3b8; font-size: 11px; }
-  .date-cell { color: #64748b; font-size: 11px; font-variant-numeric: tabular-nums; }
+  .cell-val { color: #e2e8f0; font-size: 11px; }
+  .date-cell { color: #cbd5e1; font-size: 11px; font-variant-numeric: tabular-nums; }
 
   /* ── Density: compact (21-50 rows) ──────────────────────────────────────── */
   .density-compact table     { font-size: 11px; }

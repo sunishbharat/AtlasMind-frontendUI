@@ -123,7 +123,7 @@
           fill="none"
           class="conn"
           class:hl
-          stroke={hl ? '#60a5fa' : 'rgba(148,163,184,0.15)'}
+          stroke={hl ? '#60a5fa' : 'rgba(148,163,184,0.28)'}
           stroke-width={hl ? 2 : 1}
         />
       {/if}
@@ -235,7 +235,7 @@
     gap: 5px;
     padding: 5px 16px;
     font-size: 10px;
-    color: #64748b;
+    color: #7a9ab8;
     background: rgba(129, 140, 248, 0.05);
     border-bottom: 1px solid rgba(129, 140, 248, 0.1);
     white-space: nowrap;
@@ -279,8 +279,8 @@
   .col { display: flex; flex-direction: column; gap: 8px; }
 
   .col-label {
-    font-size: 10px; font-weight: 700; letter-spacing: 0.12em;
-    text-transform: uppercase; color: #334155;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.09em;
+    text-transform: uppercase; color: #4e6884;
     padding-left: 2px; margin-bottom: 6px;
   }
 
@@ -305,12 +305,12 @@
 
   .card.dim { opacity: 0.15; transform: none; }
 
-  .key { font-size: 7.5px; font-weight: 700; letter-spacing: 0.06em; color: #475569; font-family: 'Consolas', monospace; }
+  .key { font-size: 7.5px; font-weight: 700; letter-spacing: 0.06em; color: #6b8aaa; font-family: 'Consolas', monospace; }
   .title { font-size: 9.5px; font-weight: 500; color: #cbd5e1; line-height: 1.4; word-break: break-word; overflow-wrap: break-word; }
   .card.hl .title { color: #f1f5f9; }
   .meta { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
   .badge { font-size: 7.5px; font-weight: 700; letter-spacing: 0.04em; }
-  .pts { font-size: 7.5px; color: #475569; background: #1e293b; padding: 1px 5px; border-radius: 999px; border: 1px solid #334155; }
+  .pts { font-size: 7.5px; color: #6b8aaa; background: #1e293b; padding: 1px 5px; border-radius: 999px; border: 1px solid #2d4a66; }
 
   /* ── Density: compact (9-20 items per column) ───────────────────────────── */
   .density-compact .cols  { padding: 12px 16px; gap: 0 36px; }
@@ -344,9 +344,9 @@
   .demo-stacked-label {
     font-size: 9px;
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: #334155;
+    color: #4e6884;
     margin-bottom: 4px;
   }
 </style>

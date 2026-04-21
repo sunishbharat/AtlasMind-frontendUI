@@ -69,7 +69,7 @@ def _flatten_value(val: Any) -> Any:
     """Extract a scalar from a Jira nested object or Greenhopper sprint string."""
     if isinstance(val, dict):
         extracted = _extract_jira_obj(val)
-        return extracted if extracted is not None else val
+        return extracted if extracted is not None else str(val)
     if isinstance(val, list):
         if not val:
             return None
@@ -180,12 +180,17 @@ class AggregationEngine:
         # Normalise all column names: lowercase, non-word chars → _, strip edge underscores
         df = df.clean_names(strip_underscores=True)
 
-        # Flatten Jira nested objects and Greenhopper sprint strings
+        # Drop duplicate columns produced by clean_names() collisions (e.g. two raw Jira
+        # keys that normalise to the same snake_case name). Keeping the first occurrence
+        # is consistent with how field_resolver resolves names.
+        df = df.loc[:, ~df.columns.duplicated(keep="first")]
+
+        # Flatten Jira nested objects and Greenhopper sprint strings.
+        # Apply to all object-dtype columns — _flatten_value is a no-op for scalars,
+        # so this is safe even for already-flat string columns, and it handles mixed
+        # columns where the first non-null row happens to be a scalar but later rows are dicts.
         for col in df.columns:
-            sample = df[col].dropna().iloc[0] if not df[col].dropna().empty else None
-            if sample is None:
-                continue
-            if isinstance(sample, (dict, list)):
+            if df[col].dtype == object:
                 df[col] = df[col].apply(_flatten_value)
 
         # Drop fully-null rows and columns produced by flattening

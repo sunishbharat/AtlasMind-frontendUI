@@ -115,6 +115,18 @@
               .map(([k, s]) => [k, [...s]])
           )
         : undefined;
+
+      const chartSpec = {
+        type:           axisType,
+        x_field:        axisX,
+        y_field:        isCategoricalY ? 'count' : axisY,
+        color_field:    isCategoricalY ? axisY   : undefined,
+        title:          `${axisX} × ${axisY}`,
+        max_categories: 20,
+      };
+      console.log('[CV] triggerAggregate →', { axisX, axisY, axisType, isCategoricalY, issueCount: issues.length });
+      console.log('[CV] POST /api/aggregate chart_spec:', chartSpec);
+
       try {
         const resp = await fetch('/api/aggregate', {
           method:  'POST',
@@ -124,19 +136,23 @@
             display_fields: displayFields,
             active_filters: activeFiltersPayload,
             react_to_filters: reactToFilters,
-            chart_spec: {
-              type:        axisType,
-              x_field:     axisX,
-              y_field:     isCategoricalY ? 'count' : axisY,
-              color_field: isCategoricalY ? axisY   : undefined,
-              title:       `${axisX} × ${axisY}`,
-              max_categories: 20,
-            },
+            chart_spec: chartSpec,
           }),
         });
-        if (resp.ok) chartStore.setAggregated(await resp.json() as AggregateResponse);
-      } catch { /* silent - fromExplicitSpec fallback */ }
-      finally { chartStore.aggregating = false; }
+        console.log('[CV] /api/aggregate HTTP status:', resp.status, resp.statusText);
+        if (resp.ok) {
+          const json = await resp.json();
+          console.log('[CV] /api/aggregate response:', JSON.stringify(json, null, 2));
+          chartStore.setAggregated(json as AggregateResponse);
+        } else {
+          const text = await resp.text();
+          console.error('[CV] /api/aggregate error body:', text);
+        }
+      } catch (err) {
+        console.error('[CV] /api/aggregate FAILED (network/parse error):', err);
+      } finally {
+        chartStore.aggregating = false;
+      }
     }, 180);
   }
 
@@ -149,17 +165,30 @@
   // - ECharts option from aggregated data --------------------------------------
   const aggregatedOption = $derived.by((): EChartsOption | null => {
     const agg = chartStore.aggregated;
-    if (!agg) return null;
+    if (!agg) {
+      console.log('[CV] aggregatedOption: no agg data yet');
+      return null;
+    }
     // Treat backend error responses (empty series, no pie/scatter) as no data
     const hasData = agg.pie_data?.length || agg.scatter_data?.length || agg.series?.length;
-    if (!hasData) return null;
+    console.log('[CV] aggregatedOption: title=', agg.title, '| hasData=', !!hasData,
+      '| pie=', agg.pie_data?.length ?? 0,
+      '| scatter=', agg.scatter_data?.length ?? 0,
+      '| series=', agg.series?.length ?? 0,
+      '| axisType=', axisType);
+    if (!hasData) {
+      console.warn('[CV] aggregatedOption: agg returned but hasData=false → chart will not update');
+      return null;
+    }
 
     if (agg.pie_data?.length) {
+      console.log('[CV] aggregatedOption → pie (', agg.pie_data.length, 'slices)');
       const entries: [string, number][] = agg.pie_data.map(p => [p.name, p.value]);
       return buildPie(entries, agg.title, 20, features.charts.animation);
     }
 
     if (agg.scatter_data?.length) {
+      console.log('[CV] aggregatedOption → scatter (raw scatter_data)');
       const groups = [...new Set(agg.scatter_data.map(p => p.group))];
       return {
         ...BASE_OPTION,
@@ -177,6 +206,7 @@
     // When scatter was requested but backend fell back to bar (non-numeric fields),
     // render bar data as categorical scatter dots rather than bars.
     if (axisType === 'scatter' && agg.series?.length) {
+      console.log('[CV] aggregatedOption → scatter (bar fallback, series count=', agg.series.length, ')');
       return {
         ...BASE_OPTION,
         tooltip: { ...BASE_OPTION.tooltip, trigger: 'item' },
@@ -202,6 +232,7 @@
       };
     }
 
+    console.log('[CV] aggregatedOption → bar/line series (count=', agg.series.length, ', x_axis=', agg.x_axis.length, 'categories)');
     return {
       ...BASE_OPTION,
       tooltip: { ...BASE_OPTION.tooltip, trigger: 'axis' },
@@ -389,7 +420,9 @@
     // Aggregated result from axis selectors takes highest priority
     if (aggregatedOption) {
       const label = chartStore.aggregated?.title ?? chartStore.chartSpec?.title ?? 'Chart';
-      return { explicit: { label, icon: axisType, option: aggregatedOption }, ...auto };
+      const result = { explicit: { label, icon: axisType, option: aggregatedOption }, ...auto };
+      console.log('[CV] specs → explicit+auto, tabs:', Object.keys(result), '| activeTab:', activeTab);
+      return result;
     }
 
     if (chartStore.chartSpec) {
@@ -1064,7 +1097,7 @@
 
   .cv-query-text {
     font-size: 11.5px;
-    color: #64748b;
+    color: #7a9ab8;
     font-style: italic;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1107,7 +1140,7 @@
     cursor: pointer;
     font-size: 10px;
     font-weight: 500;
-    color: #475569;
+    color: #6b8aaa;
     transition: color 0.12s, border-color 0.12s, background 0.12s;
   }
   .cv-layout-btn:hover {
@@ -1172,7 +1205,7 @@
     cursor: pointer;
     font-size: 10.5px;
     font-weight: 500;
-    color: #475569;
+    color: #6b8aaa;
     transition: color 0.12s, background 0.12s, border-color 0.12s;
   }
   .cv-tab:hover { color: #94a3b8; background: rgba(255,255,255,0.04); }
@@ -1213,14 +1246,14 @@
     cursor: pointer;
     font-size: 10px;
     font-weight: 500;
-    color: #334155;
+    color: #4e6884;
     white-space: nowrap;
     flex-shrink: 0;
     transition: color 0.12s, border-color 0.12s, background 0.12s;
   }
 
   .cv-react-btn:hover {
-    color: #64748b;
+    color: #7a9ab8;
     border-color: #334155;
   }
 
@@ -1283,7 +1316,7 @@
     width: 28px;
     height: 3px;
     border-radius: 999px;
-    background: #1e3a5f;
+    background: #3d607f;
     position: relative;
     z-index: 1;
     transition: background 0.15s;
@@ -1320,7 +1353,7 @@
     background: none;
     cursor: pointer;
     font-size: 10px;
-    color: #334155;
+    color: #4e6884;
     flex-shrink: 0;
     transition: color 0.12s;
   }
@@ -1333,7 +1366,7 @@
 
   .sort-icon {
     font-size: 9px;
-    color: #1e3a5f;
+    color: #3d607f;
     flex-shrink: 0;
     transition: color 0.12s;
     line-height: 1;
@@ -1364,12 +1397,12 @@
     border: none;
     background: none;
     cursor: pointer;
-    color: #2d3f55;
+    color: #3d607f;
     padding: 0;
     transition: color 0.12s, background 0.12s;
     flex-shrink: 0;
   }
-  .col-filter-btn:hover { color: #64748b; background: rgba(255,255,255,0.06); }
+  .col-filter-btn:hover { color: #7a9ab8; background: rgba(255,255,255,0.06); }
   .col-filter-btn.active { color: #818cf8; }
 
   .col-filter-badge {
@@ -1397,7 +1430,7 @@
   .col-filter-select-all {
     border-bottom: 1px solid #1e293b;
   }
-  .col-filter-item--all { color: #64748b; font-style: italic; }
+  .col-filter-item--all { color: #7a9ab8; font-style: italic; }
   .col-filter-item--all.checked { color: #818cf8; font-style: normal; }
 
   .col-filter-list {
@@ -1424,7 +1457,7 @@
     box-sizing: border-box;
   }
 
-  .col-filter-input::placeholder { color: #334155; }
+  .col-filter-input::placeholder { color: #4e6884; }
   .col-filter-input:focus { border-color: #334155; }
 
   .col-filter-head {
@@ -1436,7 +1469,7 @@
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #334155;
+    color: #4e6884;
     border-bottom: 1px solid #1e293b;
   }
 
@@ -1487,11 +1520,11 @@
   }
 
   .col-filter-val { flex: 1; }
-  .col-filter-item.empty-val .col-filter-val { color: #475569; font-style: italic; }
+  .col-filter-item.empty-val .col-filter-val { color: #6b8aaa; font-style: italic; }
 
   .col-filter-count {
     font-size: 9px;
-    color: #1e3a5f;
+    color: #3d607f;
     font-weight: 600;
   }
 
@@ -1518,7 +1551,7 @@
     cursor: pointer;
     font-size: 10px;
     font-weight: 500;
-    color: #475569;
+    color: #6b8aaa;
     transition: color 0.12s, background 0.12s;
   }
   .cv-view-btn:hover { color: #94a3b8; }
@@ -1543,14 +1576,14 @@
     font-weight: 700;
     letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: #334155;
+    color: #4e6884;
     flex-shrink: 0;
   }
 
   .cv-jql {
     font-family: 'Consolas', monospace;
     font-size: 9.5px;
-    color: #334155;
+    color: #4e6884;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1598,7 +1631,7 @@
     font-weight: 700;
     letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: #334155;
+    color: #4e6884;
     border-bottom: 1px solid #1e293b;
     position: sticky;
     top: 0;
@@ -1638,7 +1671,7 @@
     align-items: center;
     justify-content: center;
     font-size: 11px;
-    color: #1e293b;
+    color: #4e6884;
   }
 
   /* ── Full empty state ────────────────────────────────────────────────────── */
@@ -1657,13 +1690,13 @@
     margin: 0;
     font-size: 13px;
     font-weight: 600;
-    color: #334155;
+    color: #6b8aaa;
   }
 
   .cv-empty-hint {
     margin: 0;
     font-size: 11.5px;
-    color: #1e293b;
+    color: #4e6884;
     line-height: 1.6;
     max-width: 260px;
   }
@@ -1695,7 +1728,7 @@
     font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: #334155;
+    color: #4e6884;
     background: rgba(129, 140, 248, 0.08);
     border: 1px solid rgba(129, 140, 248, 0.15);
     border-radius: 3px;

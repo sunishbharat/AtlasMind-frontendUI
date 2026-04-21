@@ -200,14 +200,14 @@ export function buildBar(entries: [string, number][], title: string, maxItems = 
       data: categories,
       axisLine: { lineStyle: { color: '#1e293b' } },
       axisTick: { show: false },
-      axisLabel: { color: '#475569', fontSize: 10, rotate: categories.length > 6 ? 30 : 0, interval: 0 },
+      axisLabel: { color: '#6b8aaa', fontSize: 10, rotate: categories.length > 6 ? 30 : 0, interval: 0 },
       splitLine: { show: false },
     },
     yAxis: {
       type: 'value',
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: { color: '#475569', fontSize: 10 },
+      axisLabel: { color: '#6b8aaa', fontSize: 10 },
       splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
       minInterval: 1,
     },
@@ -274,7 +274,7 @@ export function buildPie(entries: [string, number][], title: string, maxItems = 
   });
 
   const rich = {
-    name: { fontSize: 11, color: '#94a3b8', fontWeight: 500, fontFamily: 'Inter, system-ui, sans-serif', lineHeight: 17 },
+    name: { fontSize: 11, color: '#a8c0d8', fontWeight: 500, fontFamily: 'Inter, system-ui, sans-serif', lineHeight: 17 },
     val:  { fontSize: 10, color: '#818cf8', fontWeight: 600, fontFamily: 'Inter, system-ui, sans-serif', lineHeight: 14 },
     pct:  { fontSize: 10, color: '#e2e8f0', fontWeight: 600, fontFamily: 'Inter, system-ui, sans-serif', lineHeight: 14 },
   };
@@ -288,13 +288,13 @@ export function buildPie(entries: [string, number][], title: string, maxItems = 
     animationEasing: 'cubicOut' as const,
     title: {
       text: title,
-      textStyle: { color: '#64748b', fontSize: 11, fontWeight: 400, fontFamily: 'Inter, system-ui, sans-serif' },
+      textStyle: { color: '#7a9ab8', fontSize: 11, fontWeight: 400, fontFamily: 'Inter, system-ui, sans-serif' },
       top: 4, left: 6,
     },
     legend: {
       show: true,
       bottom: 4,
-      textStyle: { color: '#475569', fontSize: 10, fontWeight: 400, fontFamily: 'Inter, system-ui, sans-serif' },
+      textStyle: { color: '#7a9ab8', fontSize: 10, fontWeight: 400, fontFamily: 'Inter, system-ui, sans-serif' },
       icon: 'circle', itemWidth: 6, itemHeight: 6, itemGap: 10,
     },
     series: [{
@@ -314,7 +314,7 @@ export function buildPie(entries: [string, number][], title: string, maxItems = 
       },
       labelLine: {
         show: true, length: 10, length2: 12,
-        lineStyle: { color: '#334155', width: 1, type: 'dashed' as const },
+        lineStyle: { color: '#4e6884', width: 1, type: 'dashed' as const },
         smooth: 0.4,
       },
       emphasis: {
@@ -364,15 +364,15 @@ export function buildTrend(issues: ApiIssue[], animation = true): EChartsOption 
     ...(resolvedData ? [{ name: 'Resolved', type: 'bar', data: resolvedData, barMaxWidth: 20, itemStyle: { color: 'rgba(52,211,153,0.5)' }, label: { show: labels.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV } }] : []),
   ];
 
-  const axisLabel = { color: '#475569', fontSize: 10, rotate: labels.length > 10 ? 30 : 0, interval: Math.max(0, Math.floor(labels.length / 8) - 1) };
+  const axisLabel = { color: '#6b8aaa', fontSize: 10, rotate: labels.length > 10 ? 30 : 0, interval: Math.max(0, Math.floor(labels.length / 8) - 1) };
 
   return {
     ...BASE_OPTION, animation,
     tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis' },
-    legend: { show: true, top: 24, right: 6, textStyle: { color: '#64748b', fontSize: 10 }, icon: 'circle', itemWidth: 8, itemHeight: 8 },
+    legend: { show: true, top: 24, right: 6, textStyle: { color: '#7a9ab8', fontSize: 10 }, icon: 'circle', itemWidth: 8, itemHeight: 8 },
     title: { text: 'Issue Trend', textStyle: { color: '#94a3b8', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
     xAxis: { type: 'category', data: labels, axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel, splitLine: { show: false } },
-    yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#475569', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } }, minInterval: 1 },
+    yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#6b8aaa', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } }, minInterval: 1 },
     series,
     grid: { ...BASE_OPTION.grid as object, top: 52 },
   };
@@ -450,7 +450,7 @@ export function buildGroupedTrend(
   if (!series.length) return null;
 
   const axisLabel = {
-    color: '#475569', fontSize: 10,
+    color: '#6b8aaa', fontSize: 10,
     rotate: labels.length > 10 ? 30 : 0,
     interval: Math.max(0, Math.floor(labels.length / 8) - 1),
   };
@@ -461,7 +461,7 @@ export function buildGroupedTrend(
     tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis' },
     legend: {
       show: true, top: 24, right: 6,
-      textStyle: { color: '#64748b', fontSize: 10 },
+      textStyle: { color: '#7a9ab8', fontSize: 10 },
       icon: 'circle', itemWidth: 8, itemHeight: 8,
     },
     title: {
@@ -479,7 +479,7 @@ export function buildGroupedTrend(
     yAxis: {
       type: 'value',
       axisLine: { show: false }, axisTick: { show: false },
-      axisLabel: { color: '#475569', fontSize: 10 },
+      axisLabel: { color: '#6b8aaa', fontSize: 10 },
       splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
       minInterval: 1,
     },
@@ -558,7 +558,7 @@ export function buildGroupedCategorical(
   if (!series.length) return null;
 
   const axisLabel = {
-    color: '#475569', fontSize: 10,
+    color: '#6b8aaa', fontSize: 10,
     rotate: categories.length > 6 ? 30 : 0,
     interval: 0,
   };
@@ -569,7 +569,7 @@ export function buildGroupedCategorical(
     tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis' },
     legend: {
       show: true, top: 24, right: 6,
-      textStyle: { color: '#64748b', fontSize: 10 },
+      textStyle: { color: '#7a9ab8', fontSize: 10 },
       icon: 'circle', itemWidth: 8, itemHeight: 8,
     },
     title: {
@@ -587,7 +587,7 @@ export function buildGroupedCategorical(
     yAxis: {
       type: 'value',
       axisLine: { show: false }, axisTick: { show: false },
-      axisLabel: { color: '#475569', fontSize: 10 },
+      axisLabel: { color: '#6b8aaa', fontSize: 10 },
       splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
       minInterval: 1,
     },
@@ -659,7 +659,7 @@ export function buildBurndown(issues: ApiIssue[], animation = true): EChartsOpti
   }
 
   const series = [
-    { name: 'Ideal',  type: 'line', data: ideal,  symbol: 'none', lineStyle: { color: '#334155', width: 1.5, type: 'dashed' }, itemStyle: { color: '#334155' } },
+    { name: 'Ideal',  type: 'line', data: ideal,  symbol: 'none', lineStyle: { color: '#4e6884', width: 1.5, type: 'dashed' }, itemStyle: { color: '#4e6884' } },
     { name: 'Actual', type: 'line', data: actual, smooth: false,   symbol: 'circle', symbolSize: 4, lineStyle: { color: '#818cf8', width: 2 }, itemStyle: { color: '#818cf8' }, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(129,140,248,0.2)' }, { offset: 1, color: 'rgba(129,140,248,0.02)' }] } }, connectNulls: false },
     ...(knownPts.length >= 2 ? [{ name: 'Projected', type: 'line', data: projected, smooth: true, symbol: 'none', lineStyle: { color: '#f472b6', width: 1.5, type: 'dotted' }, itemStyle: { color: '#f472b6' }, connectNulls: false }] : []),
   ];
@@ -669,10 +669,10 @@ export function buildBurndown(issues: ApiIssue[], animation = true): EChartsOpti
   return {
     ...BASE_OPTION, animation,
     tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis', formatter: (params: unknown) => { const ps = params as { axisValue?: string; marker?: string; seriesName?: string; value?: number | null }[]; const d = ps[0]?.axisValue ?? ''; const lines = ps.filter(p => p.value !== null).map(p => `${p.marker}${p.seriesName}: <b>${p.value} pts</b>`); return `${d}<br/>${lines.join('<br/>')}`; } },
-    legend: { show: true, top: 24, right: 6, textStyle: { color: '#64748b', fontSize: 10 }, icon: 'circle', itemWidth: 8, itemHeight: 8 },
+    legend: { show: true, top: 24, right: 6, textStyle: { color: '#7a9ab8', fontSize: 10 }, icon: 'circle', itemWidth: 8, itemHeight: 8 },
     title: { text: `Burndown - ${total} pts`, textStyle: { color: '#94a3b8', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
-    xAxis: { type: 'category', data: labels, axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel: { color: '#475569', fontSize: 10, rotate: days.length > 10 ? 30 : 0, interval }, splitLine: { show: false } },
-    yAxis: { min: 0, type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#475569', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } } },
+    xAxis: { type: 'category', data: labels, axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel: { color: '#6b8aaa', fontSize: 10, rotate: days.length > 10 ? 30 : 0, interval }, splitLine: { show: false } },
+    yAxis: { min: 0, type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#6b8aaa', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } } },
     series,
     grid: { ...BASE_OPTION.grid as object, top: 52 },
   };
@@ -838,16 +838,16 @@ export function buildScatter(
   }
 
   if (allSeries.length >= 1) {
-    const xAxisLabel = { color: '#475569', fontSize: 10 };
+    const xAxisLabel = { color: '#6b8aaa', fontSize: 10 };
     const xAxis = xIsDate
       ? { type: 'time',  axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel: xAxisLabel, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } } }
-      : { type: 'value', name: xField, nameTextStyle: { color: '#475569', fontSize: 10 }, axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel: xAxisLabel, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } } };
+      : { type: 'value', name: xField, nameTextStyle: { color: '#6b8aaa', fontSize: 10 }, axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel: xAxisLabel, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } } };
 
     const yAxis = {
       type: 'value', name: yIsDate ? '' : yField,
-      nameTextStyle: { color: '#475569', fontSize: 10 },
+      nameTextStyle: { color: '#6b8aaa', fontSize: 10 },
       axisLine: { show: false }, axisTick: { show: false },
-      axisLabel: { color: '#475569', fontSize: 10 },
+      axisLabel: { color: '#6b8aaa', fontSize: 10 },
       splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
     };
 
@@ -867,7 +867,7 @@ export function buildScatter(
       title: { text: title || 'Scatter', textStyle: { color: '#94a3b8', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
       legend: {
         show: groups.size > 1, top: 24, right: 6,
-        textStyle: { color: '#64748b', fontSize: 10 },
+        textStyle: { color: '#7a9ab8', fontSize: 10 },
         icon: 'circle', itemWidth: 8, itemHeight: 8,
       },
       tooltip,
@@ -896,12 +896,12 @@ export function buildScatter(
     xAxis: {
       type: 'category', data: categories,
       axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false },
-      axisLabel: { color: '#475569', fontSize: 10, rotate: categories.length > 6 ? 30 : 0, interval: 0 },
+      axisLabel: { color: '#6b8aaa', fontSize: 10, rotate: categories.length > 6 ? 30 : 0, interval: 0 },
       splitLine: { show: false },
     },
     yAxis: {
       type: 'value', axisLine: { show: false }, axisTick: { show: false },
-      axisLabel: { color: '#475569', fontSize: 10 },
+      axisLabel: { color: '#6b8aaa', fontSize: 10 },
       splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
       minInterval: 1,
     },
@@ -978,13 +978,13 @@ export function buildSingleLine(entries: [string, number][], title: string, anim
     xAxis: {
       type: 'category', data: categories,
       axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false },
-      axisLabel: { color: '#475569', fontSize: 10, rotate: categories.length > 6 ? 30 : 0, interval: 0 },
+      axisLabel: { color: '#6b8aaa', fontSize: 10, rotate: categories.length > 6 ? 30 : 0, interval: 0 },
       splitLine: { show: false },
     },
     yAxis: {
       type: 'value',
       axisLine: { show: false }, axisTick: { show: false },
-      axisLabel: { color: '#475569', fontSize: 10 },
+      axisLabel: { color: '#6b8aaa', fontSize: 10 },
       splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
       minInterval: 1,
     },

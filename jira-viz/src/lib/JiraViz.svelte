@@ -447,7 +447,7 @@
     height: 100svh;
     background: #0c1220;
     color: #e2e8f0;
-    font-family: system-ui, "Segoe UI", sans-serif;
+    font-family: 'Inter', system-ui, 'Segoe UI', sans-serif;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -528,15 +528,15 @@
   }
 
   .about-desc {
-    font-size: 10px;
-    color: #64748b;
+    font-size: 10.5px;
+    color: #7a9ab8;
     margin: 0;
-    line-height: 1.5;
+    line-height: 1.6;
   }
 
   .about-footer {
     font-size: 10px;
-    color: #334155;
+    color: #4e6884;
     margin: 0;
     padding-top: 6px;
     border-top: 1px solid #1e293b;
@@ -577,17 +577,16 @@
   }
 
   .brand-sprint {
-    font-size: 10px;
-    font-weight: 400;
-    font-style: italic;
-    color: #f1f5f9;
+    font-size: 11px;
+    font-weight: 500;
+    color: #c8d6e8;
     line-height: 1;
   }
 
   .brand-sub {
     font-size: 10px;
-    color: #334155;
-    letter-spacing: 0.04em;
+    color: #5a7a99;
+    letter-spacing: 0.03em;
   }
 
   .brand-stats {
@@ -607,24 +606,24 @@
   .stat-pill-val {
     font-size: 15px;
     font-weight: 700;
-    color: #64748b;
+    color: #94a3b8;
     line-height: 1;
   }
 
   .stat-pill-label {
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 600;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: #334155;
+    color: #4e6884;
   }
 
   .build-badge {
     position: fixed;
     bottom: 8px;
     left: 12px;
-    font-size: 9px;
-    color: #64748b;
+    font-size: 9.5px;
+    color: #4e6884;
     letter-spacing: 0.02em;
     pointer-events: none;
     z-index: 10;
@@ -655,7 +654,7 @@
 
   .progress-label {
     font-size: 11px;
-    color: #475569;
+    color: #6b8aaa;
   }
   .progress-pct {
     font-size: 12px;
@@ -675,9 +674,9 @@
   .row-label {
     font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: #334155;
+    color: #4e6884;
     flex-shrink: 0;
     min-width: 44px;
   }
@@ -718,7 +717,7 @@
   }
 
   .ds-name--sample {
-    color: #334155;
+    color: #4e6884;
     font-style: italic;
   }
 
@@ -861,7 +860,7 @@
     background: transparent;
     border: 1px solid transparent;
     border-radius: 6px;
-    color: #475569;
+    color: #6b8aaa;
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
@@ -874,14 +873,14 @@
   }
 
   .view-tab:hover {
-    color: #94a3b8;
-    background: rgba(255, 255, 255, 0.04);
+    color: #b0c4d8;
+    background: rgba(255, 255, 255, 0.05);
   }
 
   .view-tab.active {
-    color: #e2e8f0;
-    background: rgba(129, 140, 248, 0.1);
-    border-color: rgba(129, 140, 248, 0.2);
+    color: #e8eef5;
+    background: rgba(129, 140, 248, 0.12);
+    border-color: rgba(129, 140, 248, 0.28);
   }
 
   .view-tab-icon {
@@ -901,8 +900,9 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    font-size: 9px;
-    font-family: "Consolas", monospace;
+    font-size: 10.5px;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-weight: 500;
     color: #22c55e;
     background: rgba(34, 197, 94, 0.07);
     border: 1px solid rgba(34, 197, 94, 0.25);
@@ -1036,8 +1036,8 @@
     flex: 1;
     font-size: 10.5px;
     font-weight: 600;
-    letter-spacing: 0.05em;
-    color: #475569;
+    letter-spacing: 0.04em;
+    color: #6b8aaa;
   }
 
   .pane-close {
@@ -1089,9 +1089,9 @@
   .dp-key {
     font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.08em;
-    color: #334155;
-    font-family: monospace;
+    letter-spacing: 0.06em;
+    color: #5a7a99;
+    font-family: 'Consolas', monospace;
   }
   .dp-title {
     font-size: 13px;
@@ -1106,9 +1106,9 @@
 
   .dp-chip {
     font-size: 10.5px;
-    color: #64748b;
-    background: #0f172a;
-    border: 1px solid #1e293b;
+    color: #7a9ab8;
+    background: #0f1a2b;
+    border: 1px solid #243452;
     padding: 2px 8px;
     border-radius: 999px;
   }
@@ -1122,7 +1122,7 @@
 
   .dp-hint {
     font-size: 11px;
-    color: #1e293b;
+    color: #4e6884;
     font-style: italic;
   }
 
@@ -1134,17 +1134,17 @@
     width: 100%;
   }
   .dp-jql-label {
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: #475569;
+    color: #6b8aaa;
     flex-shrink: 0;
   }
   .dp-jql-code {
     font-family: "Consolas", monospace;
-    font-size: 11px;
-    color: #94a3b8;
+    font-size: 11.5px;
+    color: #a8c0d8;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
