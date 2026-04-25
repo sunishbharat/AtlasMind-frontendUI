@@ -8,7 +8,8 @@
   import { chartStore } from './chartStore.svelte.js';
   import { dataStore } from '../dataStore.svelte.js';
   import { buildAllSpecs, fromExplicitSpec, buildGroupedCategorical, buildGroupedTrend, autoDetectGroupField, buildPie } from './specBuilder.js';
-  import { BASE_OPTION, paletteGradient, paletteColor } from './theme.js';
+  import { BASE_OPTION, paletteGradient, paletteColor, semanticBarGradient } from './theme.js';
+  import { seriesColor, stableColorIndex } from '../colorMapping.js';
   import { features } from '../features.svelte.js';
   import ChartRenderer from './ChartRenderer.svelte';
   import AIHierarchyView from './AIHierarchyView.svelte';
@@ -193,6 +194,12 @@
       return {
         ...BASE_OPTION,
         tooltip: { ...BASE_OPTION.tooltip, trigger: 'item' },
+        legend: {
+          show: groups.length > 1,
+          top: 8, right: 8,
+          textStyle: { color: '#94a3b8', fontSize: 10 },
+          icon: 'circle', itemWidth: 8, itemHeight: 8,
+        },
         xAxis: { type: 'value', splitLine: { lineStyle: { color: '#1e293b' } } },
         yAxis: { type: 'value', splitLine: { lineStyle: { color: '#1e293b' } } },
         series: groups.map((g, i) => ({
@@ -210,17 +217,23 @@
       return {
         ...BASE_OPTION,
         tooltip: { ...BASE_OPTION.tooltip, trigger: 'item' },
+        legend: {
+          show: agg.series.length > 1,
+          top: 8, right: 8,
+          textStyle: { color: '#94a3b8', fontSize: 10 },
+          icon: 'circle', itemWidth: 8, itemHeight: 8,
+        },
         xAxis: {
           type: 'category', data: agg.x_axis,
           axisLine: { lineStyle: { color: '#1e293b' } },
           axisTick: { show: false },
-          axisLabel: { color: '#475569', fontSize: 11, rotate: agg.x_axis.length > 6 ? 30 : 0, interval: 0 },
+          axisLabel: { color: '#94a3b8', fontSize: 10, rotate: agg.x_axis.length > 6 ? 30 : 0, interval: 0 },
           splitLine: { show: false },
         },
         yAxis: {
           type: 'value',
           splitLine: { lineStyle: { color: '#1e293b' } },
-          axisLabel: { color: '#475569', fontSize: 11 },
+          axisLabel: { color: '#94a3b8', fontSize: 10 },
         },
         series: agg.series.map((s, i) => ({
           type: 'scatter' as const,
@@ -233,32 +246,47 @@
     }
 
     console.log('[CV] aggregatedOption → bar/line series (count=', agg.series.length, ', x_axis=', agg.x_axis.length, 'categories)');
+    // When axisY is categorical (used as color/stack field), s.name is a value of that field.
+    const isCategoricalY = axisY !== 'count' && !numericFieldSet.has(axisY);
+    const colorField: string | null = isCategoricalY ? axisY : null;
+    const hasMultiSeries = agg.series.length > 1;
     return {
       ...BASE_OPTION,
       tooltip: { ...BASE_OPTION.tooltip, trigger: 'axis' },
+      legend: {
+        show: hasMultiSeries,
+        top: 8, right: 8,
+        textStyle: { color: '#94a3b8', fontSize: 10 },
+        icon: 'circle', itemWidth: 8, itemHeight: 8,
+      },
+      grid: { ...(BASE_OPTION.grid as object), top: hasMultiSeries ? 44 : 28 },
       xAxis: { type: 'category', data: agg.x_axis, axisLine: { lineStyle: { color: '#1e293b' } },
-               axisLabel: { color: '#475569', fontSize: 11 } },
+               axisTick: { show: false }, splitLine: { show: false },
+               axisLabel: { color: '#94a3b8', fontSize: 10, interval: 0, rotate: agg.x_axis.length > 6 ? 30 : 0 } },
       yAxis: { type: 'value', splitLine: { lineStyle: { color: '#1e293b' } },
-               axisLabel: { color: '#475569', fontSize: 11 } },
-      series: agg.series.map((s, i) => ({
+               axisLabel: { color: '#94a3b8', fontSize: 10 } },
+      series: agg.series.map((s) => {
+        const sem = seriesColor(colorField, s.name);
+        return ({
         type:  s.chart_type as 'bar' | 'line',
         name:  s.name,
         data:  s.data,
         ...(s.stack ? { stack: s.stack } : {}),
         ...(s.chart_type === 'bar'
           ? {
-              itemStyle: { color: paletteGradient(i), borderRadius: s.stack ? [0, 0, 0, 0] as const : [12, 12, 0, 0] as const },
+              itemStyle: { color: sem ? semanticBarGradient(sem) : paletteGradient(stableColorIndex(s.name)), borderRadius: s.stack ? [0, 0, 0, 0] as const : [12, 12, 0, 0] as const },
               barMaxWidth: 40, barMinHeight: 4,
               showBackground: !s.stack,
               backgroundStyle: { color: 'rgba(255,255,255,0.04)', borderRadius: [12, 12, 0, 0] as const },
               label: s.stack
-                ? { show: true, position: 'inside' as const, color: 'rgba(255,255,255,0.85)', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: (p: { value: number | null }) => (p.value && p.value > 0 ? (Number.isInteger(p.value) ? String(p.value) : p.value.toFixed(2).replace(/\.?0+$/, '')) : '') }
-                : { show: true, position: 'top'    as const, color: '#94a3b8',                fontSize: 10, fontFamily: 'Inter, system-ui, sans-serif', formatter: (p: { value: number | null }) => p.value != null ? fmtNum(p.value) : '' },
+                ? { show: true, position: 'inside' as const, color: 'rgba(255,255,255,0.9)', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: (p: { value: number | null }) => (p.value && p.value > 0 ? (Number.isInteger(p.value) ? String(p.value) : p.value.toFixed(2).replace(/\.?0+$/, '')) : '') }
+                : { show: true, position: 'top'    as const, color: '#e2e8f0',               fontSize: 10, fontFamily: 'Inter, system-ui, sans-serif', formatter: (p: { value: number | null }) => p.value != null ? fmtNum(p.value) : '' },
               emphasis: { itemStyle: { shadowBlur: 16, shadowColor: 'rgba(129,140,248,0.45)', opacity: 1 } },
             }
-          : { smooth: true, showSymbol: false, lineStyle: { color: paletteColor(i), width: 2 },
-              label: { show: agg.x_axis.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: (p: { value: number | null }) => p.value != null ? fmtNum(p.value) : '' } }),
-      })),
+          : { smooth: true, showSymbol: false, lineStyle: { color: sem ?? paletteColor(stableColorIndex(s.name)), width: 2 },
+              label: { show: agg.x_axis.length <= 15, position: 'top' as const, color: '#e2e8f0', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: (p: { value: number | null }) => p.value != null ? fmtNum(p.value) : '' } }),
+        });
+      }),
     };
   });
 
@@ -1097,7 +1125,7 @@
 
   .cv-query-text {
     font-size: 11.5px;
-    color: #7a9ab8;
+    color: #94a3b8;
     font-style: italic;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1140,7 +1168,7 @@
     cursor: pointer;
     font-size: 10px;
     font-weight: 500;
-    color: #6b8aaa;
+    color: #94a3b8;
     transition: color 0.12s, border-color 0.12s, background 0.12s;
   }
   .cv-layout-btn:hover {
@@ -1205,10 +1233,10 @@
     cursor: pointer;
     font-size: 10.5px;
     font-weight: 500;
-    color: #6b8aaa;
+    color: #94a3b8;
     transition: color 0.12s, background 0.12s, border-color 0.12s;
   }
-  .cv-tab:hover { color: #94a3b8; background: rgba(255,255,255,0.04); }
+  .cv-tab:hover { color: #cbd5e1; background: rgba(255,255,255,0.04); }
   .cv-tab.active {
     color: #818cf8;
     background: rgba(129, 140, 248, 0.1);
@@ -1246,14 +1274,14 @@
     cursor: pointer;
     font-size: 10px;
     font-weight: 500;
-    color: #4e6884;
+    color: #94a3b8;
     white-space: nowrap;
     flex-shrink: 0;
     transition: color 0.12s, border-color 0.12s, background 0.12s;
   }
 
   .cv-react-btn:hover {
-    color: #7a9ab8;
+    color: #cbd5e1;
     border-color: #334155;
   }
 
@@ -1316,7 +1344,7 @@
     width: 28px;
     height: 3px;
     border-radius: 999px;
-    background: #3d607f;
+    background: #4e6884;
     position: relative;
     z-index: 1;
     transition: background 0.15s;
@@ -1353,7 +1381,7 @@
     background: none;
     cursor: pointer;
     font-size: 10px;
-    color: #4e6884;
+    color: #7a9ab8;
     flex-shrink: 0;
     transition: color 0.12s;
   }
@@ -1361,12 +1389,12 @@
 
   /* th sort */
   .th-sortable { cursor: pointer; user-select: none; }
-  .th-sortable:hover { color: #64748b !important; }
+  .th-sortable:hover { color: #94a3b8 !important; }
   .th-sorted { color: #818cf8 !important; background: rgba(129,140,248,0.06) !important; }
 
   .sort-icon {
     font-size: 9px;
-    color: #3d607f;
+    color: #6b8aaa;
     flex-shrink: 0;
     transition: color 0.12s;
     line-height: 1;
@@ -1397,12 +1425,12 @@
     border: none;
     background: none;
     cursor: pointer;
-    color: #3d607f;
+    color: #6b8aaa;
     padding: 0;
     transition: color 0.12s, background 0.12s;
     flex-shrink: 0;
   }
-  .col-filter-btn:hover { color: #7a9ab8; background: rgba(255,255,255,0.06); }
+  .col-filter-btn:hover { color: #94a3b8; background: rgba(255,255,255,0.06); }
   .col-filter-btn.active { color: #818cf8; }
 
   .col-filter-badge {
@@ -1430,7 +1458,7 @@
   .col-filter-select-all {
     border-bottom: 1px solid #1e293b;
   }
-  .col-filter-item--all { color: #7a9ab8; font-style: italic; }
+  .col-filter-item--all { color: #94a3b8; font-style: italic; }
   .col-filter-item--all.checked { color: #818cf8; font-style: normal; }
 
   .col-filter-list {
@@ -1457,7 +1485,7 @@
     box-sizing: border-box;
   }
 
-  .col-filter-input::placeholder { color: #4e6884; }
+  .col-filter-input::placeholder { color: #6b8aaa; }
   .col-filter-input:focus { border-color: #334155; }
 
   .col-filter-head {
@@ -1469,7 +1497,7 @@
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #4e6884;
+    color: #7a9ab8;
     border-bottom: 1px solid #1e293b;
   }
 
@@ -1494,7 +1522,7 @@
     background: none;
     cursor: pointer;
     font-size: 11px;
-    color: #64748b;
+    color: #94a3b8;
     text-align: left;
     transition: background 0.1s, color 0.1s;
   }
@@ -1524,7 +1552,7 @@
 
   .col-filter-count {
     font-size: 9px;
-    color: #3d607f;
+    color: #6b8aaa;
     font-weight: 600;
   }
 
@@ -1551,10 +1579,10 @@
     cursor: pointer;
     font-size: 10px;
     font-weight: 500;
-    color: #6b8aaa;
+    color: #94a3b8;
     transition: color 0.12s, background 0.12s;
   }
-  .cv-view-btn:hover { color: #94a3b8; }
+  .cv-view-btn:hover { color: #cbd5e1; }
   .cv-view-btn.active {
     color: #818cf8;
     background: rgba(129, 140, 248, 0.15);
@@ -1576,14 +1604,14 @@
     font-weight: 700;
     letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: #4e6884;
+    color: #7a9ab8;
     flex-shrink: 0;
   }
 
   .cv-jql {
     font-family: 'Consolas', monospace;
     font-size: 9.5px;
-    color: #4e6884;
+    color: #6b8aaa;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1631,7 +1659,7 @@
     font-weight: 700;
     letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: #4e6884;
+    color: #7a9ab8;
     border-bottom: 1px solid #1e293b;
     position: sticky;
     top: 0;
@@ -1671,7 +1699,7 @@
     align-items: center;
     justify-content: center;
     font-size: 11px;
-    color: #4e6884;
+    color: #7a9ab8;
   }
 
   /* ── Full empty state ────────────────────────────────────────────────────── */
@@ -1690,13 +1718,13 @@
     margin: 0;
     font-size: 13px;
     font-weight: 600;
-    color: #6b8aaa;
+    color: #94a3b8;
   }
 
   .cv-empty-hint {
     margin: 0;
     font-size: 11.5px;
-    color: #4e6884;
+    color: #7a9ab8;
     line-height: 1.6;
     max-width: 260px;
   }
@@ -1728,7 +1756,7 @@
     font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: #4e6884;
+    color: #7a9ab8;
     background: rgba(129, 140, 248, 0.08);
     border: 1px solid rgba(129, 140, 248, 0.15);
     border-radius: 3px;

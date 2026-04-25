@@ -127,7 +127,7 @@
     background: none;
     border: none;
     cursor: pointer;
-    color: #6b8aaa;
+    color: #94a3b8;
     font-size: 10.5px;
     font-weight: 600;
     letter-spacing: 0.04em;
@@ -158,7 +158,7 @@
 
   .chevron {
     margin-left: auto;
-    color: #4e6884;
+    color: #7a9ab8;
     transition: transform 0.2s;
     flex-shrink: 0;
   }
@@ -184,7 +184,7 @@
     cursor: pointer;
     font-size: 10px;
     font-weight: 500;
-    color: #6b8aaa;
+    color: #94a3b8;
     transition: color 0.12s, background 0.12s, border-color 0.12s;
   }
 

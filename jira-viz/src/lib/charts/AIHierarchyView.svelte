@@ -3,26 +3,9 @@
   // but takes an `issues` array prop instead of reading from dataStore.
   import { onMount } from 'svelte';
   import type { ApiIssue } from './chartStore.svelte.js';
+  import { statusStyle } from '../statusColors.js';
 
   let { issues = [] as ApiIssue[], jiraBaseUrl = '' }: { issues?: ApiIssue[]; jiraBaseUrl?: string } = $props();
-
-  interface StyleEntry { color: string; bg: string }
-
-  const STATUS_COLOR: Record<string, StyleEntry> = {
-    'to do':       { color: '#64748b', bg: 'rgba(100,116,139,0.08)' },
-    'open':        { color: '#64748b', bg: 'rgba(100,116,139,0.08)' },
-    'backlog':     { color: '#64748b', bg: 'rgba(100,116,139,0.08)' },
-    'in progress': { color: '#60a5fa', bg: 'rgba(96,165,250,0.08)'  },
-    'in review':   { color: '#818cf8', bg: 'rgba(129,140,248,0.08)' },
-    'done':        { color: '#34d399', bg: 'rgba(52,211,153,0.08)'  },
-    'closed':      { color: '#34d399', bg: 'rgba(52,211,153,0.08)'  },
-    'resolved':    { color: '#34d399', bg: 'rgba(52,211,153,0.08)'  },
-    'blocked':     { color: '#f87171', bg: 'rgba(248,113,113,0.08)' },
-  };
-
-  function statusStyle(status = ''): StyleEntry {
-    return STATUS_COLOR[status.toLowerCase()] ?? { color: '#818cf8', bg: 'rgba(129,140,248,0.08)' };
-  }
 
   // - Columns from unique issuetypes in the data ------------------------------
   const columns = $derived.by(() => {

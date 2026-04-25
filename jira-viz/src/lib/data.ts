@@ -1,4 +1,6 @@
 // Hardcoded Jira project data - ATLAS Sprint 12
+import { statusStyle, type StatusStyle } from './statusColors.js';
+export type { StatusStyle } from './statusColors.js';
 
 export type IssueStatus = 'Done' | 'In Progress' | 'To Do';
 
@@ -34,11 +36,6 @@ export type AnyIssue = Epic | Story | Subtask;
 export interface Connection {
   from: string;
   to: string;
-}
-
-export interface StatusStyle {
-  color: string;
-  bg: string;
 }
 
 export const epics: Epic[] = [
@@ -89,7 +86,7 @@ export const connections: Connection[] = [
 ];
 
 export const STATUS_STYLE: Record<IssueStatus, StatusStyle> = {
-  'Done':        { color: '#22c55e', bg: 'rgba(34,197,94,0.12)'   },
-  'In Progress': { color: '#3b82f6', bg: 'rgba(59,130,246,0.12)'  },
-  'To Do':       { color: '#94a3b8', bg: 'rgba(148,163,184,0.07)' },
+  'Done':        statusStyle('done'),
+  'In Progress': statusStyle('in progress'),
+  'To Do':       statusStyle('to do'),
 };

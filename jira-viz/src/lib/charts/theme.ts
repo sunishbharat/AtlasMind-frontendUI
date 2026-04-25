@@ -47,6 +47,53 @@ export function paletteColor(index: number): string {
   return PALETTE[index % PALETTE.length][0];
 }
 
+// -- Semantic colour gradient helpers ----------------------------------------
+
+/** Shift a hex colour toward white (factor > 0) or toward black (factor < 0). */
+function hexShift(hex: string, factor: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const adj = (c: number) => factor > 0
+    ? Math.min(255, Math.round(c + (255 - c) * factor))
+    : Math.round(c * (1 + factor));
+  const [nr, ng, nb] = [adj(r), adj(g), adj(b)];
+  return `#${nr.toString(16).padStart(2, '0')}${ng.toString(16).padStart(2, '0')}${nb.toString(16).padStart(2, '0')}`;
+}
+
+/**
+ * 3-stop vertical LinearGradient from a semantic hex colour.
+ * Luminous cap → full colour → deep base for a premium bar look.
+ */
+export function semanticBarGradient(color: string, vertical = true): LinearGradient {
+  return {
+    type: 'linear',
+    x: 0, y: 0,
+    x2: vertical ? 0 : 1,
+    y2: vertical ? 1 : 0,
+    colorStops: [
+      { offset: 0,    color: hexShift(color,  0.36) },  // bright luminous cap
+      { offset: 0.42, color: color                  },  // full semantic colour
+      { offset: 1,    color: hexShift(color, -0.30) },  // rich dark base
+    ],
+  };
+}
+
+/**
+ * Radial gradient from a semantic hex colour for pie slices.
+ * Deep glowing centre → full colour mid-ring → bright luminous edge.
+ */
+export function semanticPieGradient(color: string): object {
+  return {
+    type: 'radial', x: 0.5, y: 0.5, r: 0.85,
+    colorStops: [
+      { offset: 0,   color: hexShift(color, -0.18) + 'cc' },  // deeper rich centre
+      { offset: 0.55, color: color + 'ee'                 },  // full colour mid-ring
+      { offset: 1,   color: hexShift(color,  0.28)        },  // bright luminous edge
+    ],
+  };
+}
+
 /** Base ECharts option merged into every chart. Override per-chart as needed. */
 export const BASE_OPTION: EChartsOption = {
   backgroundColor: 'transparent',

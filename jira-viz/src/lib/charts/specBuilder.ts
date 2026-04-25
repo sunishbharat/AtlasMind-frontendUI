@@ -7,7 +7,8 @@
 
 import type { EChartsOption } from 'echarts';
 import type { ApiIssue, ChartSpec } from './chartStore.svelte.js';
-import { BASE_OPTION, paletteGradient, paletteColor, PALETTE } from './theme.js';
+import { BASE_OPTION, paletteGradient, paletteColor, PALETTE, semanticBarGradient, semanticPieGradient } from './theme.js';
+import { seriesColor, resolveColorByValue, stableColorIndex } from '../colorMapping.js';
 import { StackedBarChart } from './StackedBarChart.js';
 
 export interface SpecEntry {
@@ -181,33 +182,39 @@ const fmtV = (p: { value: number | null | undefined }): string => {
 
 // -- Chart builders -----------------------------------------------------------
 
-export function buildBar(entries: [string, number][], title: string, maxItems = 20, animation = true): EChartsOption {
+export function buildBar(entries: [string, number][], title: string, maxItems = 20, animation = true, field?: string): EChartsOption {
   const slice      = entries.slice(0, maxItems);
   const categories = slice.map(([k]) => k);
   const BR = [12, 12, 0, 0] as [number, number, number, number];
-  const values = slice.map(([, v], i) => ({
-    value: v,
-    itemStyle: { color: paletteGradient(i, true), borderRadius: BR },
-  }));
+  const values = slice.map(([name, v], i) => {
+    const sem = field ? seriesColor(field, name) : resolveColorByValue(name)?.color;
+    return {
+      value: v,
+      itemStyle: {
+        color: sem ? semanticBarGradient(sem) : paletteGradient(i, true),
+        borderRadius: BR,
+      },
+    };
+  });
 
   return {
     ...BASE_OPTION,
     animation,
     tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis' },
-    title: { text: title, textStyle: { color: '#94a3b8', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
+    title: { text: title, textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
     xAxis: {
       type: 'category',
       data: categories,
       axisLine: { lineStyle: { color: '#1e293b' } },
       axisTick: { show: false },
-      axisLabel: { color: '#6b8aaa', fontSize: 10, rotate: categories.length > 6 ? 30 : 0, interval: 0 },
+      axisLabel: { color: '#94a3b8', fontSize: 10, rotate: categories.length > 6 ? 30 : 0, interval: 0 },
       splitLine: { show: false },
     },
     yAxis: {
       type: 'value',
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: { color: '#6b8aaa', fontSize: 10 },
+      axisLabel: { color: '#94a3b8', fontSize: 10 },
       splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
       minInterval: 1,
     },
@@ -216,7 +223,7 @@ export function buildBar(entries: [string, number][], title: string, maxItems = 
       borderRadius: [12, 12, 0, 0],
       showBackground: true,
       backgroundStyle: { color: 'rgba(255,255,255,0.04)', borderRadius: [12, 12, 0, 0] },
-      label: { show: true, position: 'top', color: '#94a3b8', fontSize: 10, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV },
+      label: { show: true, position: 'top', color: '#e2e8f0', fontSize: 10, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV },
       emphasis: { itemStyle: { shadowBlur: 16, shadowColor: 'rgba(129,140,248,0.45)', opacity: 1 } },
     }],
   };
@@ -249,7 +256,9 @@ export function buildPie(entries: [string, number][], title: string, maxItems = 
     maxVal === minVal ? v : MIN_FLOOR * maxVal + ((v - minVal) / (maxVal - minVal)) * (1 - MIN_FLOOR) * maxVal;
 
   const data = slice.map(([name, value], i) => {
+    const semanticColor = resolveColorByValue(name)?.color;
     const [light, dark] = PALETTE[i % PALETTE.length];
+    const baseColor = semanticColor ?? light;
     const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0';
     return {
       name,
@@ -257,18 +266,18 @@ export function buildPie(entries: [string, number][], title: string, maxItems = 
       originalValue: value,             // kept for tooltip accuracy
       tooltip: { formatter: () => `<b>${name}</b><br/>${value} &nbsp;·&nbsp; ${pct}%` },
       itemStyle: {
-        color: {
+        color: (semanticColor ? semanticPieGradient(semanticColor) : {
           type: 'radial', x: 0.5, y: 0.5, r: 0.85,
           colorStops: [
-            { offset: 0,   color: dark  + 'cc' },   // vivid at center (was '55')
+            { offset: 0,   color: dark  + 'cc' },
             { offset: 0.6, color: light + 'ee' },
             { offset: 1,   color: light },
           ],
-        } as unknown as string,
+        }) as unknown as string,
         borderColor: '#0f172a',
         borderWidth: 2,
         shadowBlur: 6,
-        shadowColor: light + '66',       // soft resting glow
+        shadowColor: baseColor + '66',   // soft resting glow
       },
     };
   });
@@ -288,13 +297,13 @@ export function buildPie(entries: [string, number][], title: string, maxItems = 
     animationEasing: 'cubicOut' as const,
     title: {
       text: title,
-      textStyle: { color: '#7a9ab8', fontSize: 11, fontWeight: 400, fontFamily: 'Inter, system-ui, sans-serif' },
+      textStyle: { color: '#cbd5e1', fontSize: 11, fontWeight: 500, fontFamily: 'Inter, system-ui, sans-serif' },
       top: 4, left: 6,
     },
     legend: {
       show: true,
       bottom: 4,
-      textStyle: { color: '#7a9ab8', fontSize: 10, fontWeight: 400, fontFamily: 'Inter, system-ui, sans-serif' },
+      textStyle: { color: '#94a3b8', fontSize: 10, fontWeight: 400, fontFamily: 'Inter, system-ui, sans-serif' },
       icon: 'circle', itemWidth: 6, itemHeight: 6, itemGap: 10,
     },
     series: [{
@@ -360,19 +369,19 @@ export function buildTrend(issues: ApiIssue[], animation = true): EChartsOption 
       lineStyle: { color: '#818cf8', width: 2 },
       areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(129,140,248,0.25)' }, { offset: 1, color: 'rgba(129,140,248,0.02)' }] } },
     },
-    { name: 'Created', type: 'bar', data: createdData, barMaxWidth: 20, itemStyle: { color: 'rgba(129,140,248,0.4)' }, label: { show: labels.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV } },
-    ...(resolvedData ? [{ name: 'Resolved', type: 'bar', data: resolvedData, barMaxWidth: 20, itemStyle: { color: 'rgba(52,211,153,0.5)' }, label: { show: labels.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV } }] : []),
+    { name: 'Created', type: 'bar', data: createdData, barMaxWidth: 20, itemStyle: { color: 'rgba(129,140,248,0.4)' }, label: { show: labels.length <= 15, position: 'top' as const, color: '#e2e8f0', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV } },
+    ...(resolvedData ? [{ name: 'Resolved', type: 'bar', data: resolvedData, barMaxWidth: 20, itemStyle: { color: 'rgba(52,211,153,0.5)' }, label: { show: labels.length <= 15, position: 'top' as const, color: '#e2e8f0', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV } }] : []),
   ];
 
-  const axisLabel = { color: '#6b8aaa', fontSize: 10, rotate: labels.length > 10 ? 30 : 0, interval: Math.max(0, Math.floor(labels.length / 8) - 1) };
+  const axisLabel = { color: '#94a3b8', fontSize: 10, rotate: labels.length > 10 ? 30 : 0, interval: Math.max(0, Math.floor(labels.length / 8) - 1) };
 
   return {
     ...BASE_OPTION, animation,
     tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis' },
-    legend: { show: true, top: 24, right: 6, textStyle: { color: '#7a9ab8', fontSize: 10 }, icon: 'circle', itemWidth: 8, itemHeight: 8 },
-    title: { text: 'Issue Trend', textStyle: { color: '#94a3b8', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
+    legend: { show: true, top: 24, right: 6, textStyle: { color: '#94a3b8', fontSize: 10 }, icon: 'circle', itemWidth: 8, itemHeight: 8 },
+    title: { text: 'Issue Trend', textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
     xAxis: { type: 'category', data: labels, axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel, splitLine: { show: false } },
-    yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#6b8aaa', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } }, minInterval: 1 },
+    yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#94a3b8', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } }, minInterval: 1 },
     series,
     grid: { ...BASE_OPTION.grid as object, top: 52 },
   };
@@ -431,7 +440,7 @@ export function buildGroupedTrend(
         : bucketSumByDate(groupIssues, xField, yField, bucket);
 
     const data  = spine.map(b => tsMap.get(b.ts) ?? 0);
-    const color = paletteColor(idx);
+    const color = seriesColor(groupField, groupName) ?? paletteColor(idx);
 
     return {
       name: groupName,
@@ -442,7 +451,7 @@ export function buildGroupedTrend(
       symbolSize: 4,
       lineStyle: { color, width: 1.8 },
       itemStyle: { color },
-      label: { show: spine.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV },
+      label: { show: spine.length <= 15, position: 'top' as const, color: '#e2e8f0', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV },
       emphasis: { focus: 'series' as const },
     };
   });
@@ -450,7 +459,7 @@ export function buildGroupedTrend(
   if (!series.length) return null;
 
   const axisLabel = {
-    color: '#6b8aaa', fontSize: 10,
+    color: '#94a3b8', fontSize: 10,
     rotate: labels.length > 10 ? 30 : 0,
     interval: Math.max(0, Math.floor(labels.length / 8) - 1),
   };
@@ -461,12 +470,12 @@ export function buildGroupedTrend(
     tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis' },
     legend: {
       show: true, top: 24, right: 6,
-      textStyle: { color: '#7a9ab8', fontSize: 10 },
+      textStyle: { color: '#94a3b8', fontSize: 10 },
       icon: 'circle', itemWidth: 8, itemHeight: 8,
     },
     title: {
       text: title,
-      textStyle: { color: '#94a3b8', fontSize: 12, fontWeight: 600 },
+      textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 },
       top: 4, left: 6,
     },
     xAxis: {
@@ -479,7 +488,7 @@ export function buildGroupedTrend(
     yAxis: {
       type: 'value',
       axisLine: { show: false }, axisTick: { show: false },
-      axisLabel: { color: '#6b8aaa', fontSize: 10 },
+      axisLabel: { color: '#94a3b8', fontSize: 10 },
       splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
       minInterval: 1,
     },
@@ -533,8 +542,10 @@ export function buildGroupedCategorical(
         ? new Map(countByField(groupIssues, xField))
         : new Map(sumByField(groupIssues, yField, xField));
 
-    const data  = categories.map(cat => catMap.get(cat) ?? 0);
-    const color = paletteColor(idx);
+    const data   = categories.map(cat => catMap.get(cat) ?? 0);
+    const sem    = seriesColor(groupField, groupName);
+    const flat   = sem ?? paletteColor(idx);
+    const grad   = sem ? semanticBarGradient(sem) : paletteGradient(stableColorIndex(groupName), true);
 
     return {
       name: groupName,
@@ -544,13 +555,14 @@ export function buildGroupedCategorical(
         smooth:      true,
         symbol:      'circle',
         symbolSize:  4,
-        lineStyle:   { color, width: 1.8 },
-        label: { show: categories.length <= 15, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV },
+        lineStyle:   { color: flat, width: 1.8 },
+        itemStyle:   { color: flat },
+        label: { show: categories.length <= 15, position: 'top' as const, color: '#e2e8f0', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV },
       } : {
         barMaxWidth: 28,
-        label: { show: true, position: 'top' as const, color: '#94a3b8', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV },
+        itemStyle:   { color: grad },
+        label: { show: true, position: 'top' as const, color: '#e2e8f0', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV },
       }),
-      itemStyle: { color },
       emphasis:  { focus: 'series' as const },
     };
   });
@@ -558,7 +570,7 @@ export function buildGroupedCategorical(
   if (!series.length) return null;
 
   const axisLabel = {
-    color: '#6b8aaa', fontSize: 10,
+    color: '#94a3b8', fontSize: 10,
     rotate: categories.length > 6 ? 30 : 0,
     interval: 0,
   };
@@ -569,12 +581,12 @@ export function buildGroupedCategorical(
     tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis' },
     legend: {
       show: true, top: 24, right: 6,
-      textStyle: { color: '#7a9ab8', fontSize: 10 },
+      textStyle: { color: '#94a3b8', fontSize: 10 },
       icon: 'circle', itemWidth: 8, itemHeight: 8,
     },
     title: {
       text: title,
-      textStyle: { color: '#94a3b8', fontSize: 12, fontWeight: 600 },
+      textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 },
       top: 4, left: 6,
     },
     xAxis: {
@@ -587,7 +599,7 @@ export function buildGroupedCategorical(
     yAxis: {
       type: 'value',
       axisLine: { show: false }, axisTick: { show: false },
-      axisLabel: { color: '#6b8aaa', fontSize: 10 },
+      axisLabel: { color: '#94a3b8', fontSize: 10 },
       splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
       minInterval: 1,
     },
@@ -669,10 +681,10 @@ export function buildBurndown(issues: ApiIssue[], animation = true): EChartsOpti
   return {
     ...BASE_OPTION, animation,
     tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis', formatter: (params: unknown) => { const ps = params as { axisValue?: string; marker?: string; seriesName?: string; value?: number | null }[]; const d = ps[0]?.axisValue ?? ''; const lines = ps.filter(p => p.value !== null).map(p => `${p.marker}${p.seriesName}: <b>${p.value} pts</b>`); return `${d}<br/>${lines.join('<br/>')}`; } },
-    legend: { show: true, top: 24, right: 6, textStyle: { color: '#7a9ab8', fontSize: 10 }, icon: 'circle', itemWidth: 8, itemHeight: 8 },
-    title: { text: `Burndown - ${total} pts`, textStyle: { color: '#94a3b8', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
-    xAxis: { type: 'category', data: labels, axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel: { color: '#6b8aaa', fontSize: 10, rotate: days.length > 10 ? 30 : 0, interval }, splitLine: { show: false } },
-    yAxis: { min: 0, type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#6b8aaa', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } } },
+    legend: { show: true, top: 24, right: 6, textStyle: { color: '#94a3b8', fontSize: 10 }, icon: 'circle', itemWidth: 8, itemHeight: 8 },
+    title: { text: `Burndown - ${total} pts`, textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
+    xAxis: { type: 'category', data: labels, axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel: { color: '#94a3b8', fontSize: 10, rotate: days.length > 10 ? 30 : 0, interval }, splitLine: { show: false } },
+    yAxis: { min: 0, type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#94a3b8', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } } },
     series,
     grid: { ...BASE_OPTION.grid as object, top: 52 },
   };
@@ -698,7 +710,7 @@ export function buildAllSpecs(issues: ApiIssue[], maxItems = 20, animation = tru
     const entries = countByField(issues, key);
     if (entries.length < 2) continue;
 
-    specs[`bar_${key}`] = { label: `By ${label}`, icon: 'bar', option: buildBar(entries, `Issues by ${label}`, maxItems, animation) };
+    specs[`bar_${key}`] = { label: `By ${label}`, icon: 'bar', option: buildBar(entries, `Issues by ${label}`, maxItems, animation, key) };
     if (entries.length <= 9) {
       specs[`pie_${key}`] = { label: `${label} (pie)`, icon: 'pie', option: buildPie(entries, `Issues by ${label}`, maxItems, animation) };
     }
@@ -838,16 +850,16 @@ export function buildScatter(
   }
 
   if (allSeries.length >= 1) {
-    const xAxisLabel = { color: '#6b8aaa', fontSize: 10 };
+    const xAxisLabel = { color: '#94a3b8', fontSize: 10 };
     const xAxis = xIsDate
       ? { type: 'time',  axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel: xAxisLabel, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } } }
-      : { type: 'value', name: xField, nameTextStyle: { color: '#6b8aaa', fontSize: 10 }, axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel: xAxisLabel, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } } };
+      : { type: 'value', name: xField, nameTextStyle: { color: '#94a3b8', fontSize: 10 }, axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel: xAxisLabel, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } } };
 
     const yAxis = {
       type: 'value', name: yIsDate ? '' : yField,
-      nameTextStyle: { color: '#6b8aaa', fontSize: 10 },
+      nameTextStyle: { color: '#94a3b8', fontSize: 10 },
       axisLine: { show: false }, axisTick: { show: false },
-      axisLabel: { color: '#6b8aaa', fontSize: 10 },
+      axisLabel: { color: '#94a3b8', fontSize: 10 },
       splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
     };
 
@@ -864,10 +876,10 @@ export function buildScatter(
     return {
       ...BASE_OPTION,
       animation,
-      title: { text: title || 'Scatter', textStyle: { color: '#94a3b8', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
+      title: { text: title || 'Scatter', textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
       legend: {
         show: groups.size > 1, top: 24, right: 6,
-        textStyle: { color: '#7a9ab8', fontSize: 10 },
+        textStyle: { color: '#94a3b8', fontSize: 10 },
         icon: 'circle', itemWidth: 8, itemHeight: 8,
       },
       tooltip,
@@ -891,17 +903,17 @@ export function buildScatter(
   return {
     ...BASE_OPTION,
     animation,
-    title: { text: title || 'Scatter', textStyle: { color: '#94a3b8', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
+    title: { text: title || 'Scatter', textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
     tooltip: { trigger: 'item' },
     xAxis: {
       type: 'category', data: categories,
       axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false },
-      axisLabel: { color: '#6b8aaa', fontSize: 10, rotate: categories.length > 6 ? 30 : 0, interval: 0 },
+      axisLabel: { color: '#94a3b8', fontSize: 10, rotate: categories.length > 6 ? 30 : 0, interval: 0 },
       splitLine: { show: false },
     },
     yAxis: {
       type: 'value', axisLine: { show: false }, axisTick: { show: false },
-      axisLabel: { color: '#6b8aaa', fontSize: 10 },
+      axisLabel: { color: '#94a3b8', fontSize: 10 },
       splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
       minInterval: 1,
     },
@@ -974,17 +986,17 @@ export function buildSingleLine(entries: [string, number][], title: string, anim
     ...BASE_OPTION,
     animation,
     tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis' },
-    title: { text: title, textStyle: { color: '#94a3b8', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
+    title: { text: title, textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
     xAxis: {
       type: 'category', data: categories,
       axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false },
-      axisLabel: { color: '#6b8aaa', fontSize: 10, rotate: categories.length > 6 ? 30 : 0, interval: 0 },
+      axisLabel: { color: '#94a3b8', fontSize: 10, rotate: categories.length > 6 ? 30 : 0, interval: 0 },
       splitLine: { show: false },
     },
     yAxis: {
       type: 'value',
       axisLine: { show: false }, axisTick: { show: false },
-      axisLabel: { color: '#6b8aaa', fontSize: 10 },
+      axisLabel: { color: '#94a3b8', fontSize: 10 },
       splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
       minInterval: 1,
     },
@@ -1100,7 +1112,7 @@ export function fromExplicitSpec(chartSpec: ChartSpec, issues: ApiIssue[], anima
 
   if (normalizedType === 'pie') return buildPie(entries, title, 20, animation);
   if (normalizedType === 'line') return buildSingleLine(entries, title, animation);
-  return buildBar(entries, title, 20, animation);
+  return buildBar(entries, title, 20, animation, chartSpec.x_field);
 }
 
 /** Return the first chart option for a given type preference. */

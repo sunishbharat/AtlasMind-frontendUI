@@ -1,17 +1,11 @@
 <script lang="ts">
   import type { IssueStatus } from '../data.js';
   import { STATUS_STYLE } from '../data.js';
+  import { issueTypeStyle } from '../statusColors.js';
   import { dataStore } from '../dataStore.svelte.js';
   import { chartStore } from '../charts/index.js';
   import { vizState } from '../state.svelte.js';
 
-  interface TypeStyle { label: string; color: string; bg: string }
-
-  const TYPE_STYLE: Record<string, TypeStyle> = {
-    'Epic':     { label: 'Epic',     color: '#818cf8', bg: 'rgba(129,140,248,0.12)' },
-    'Story':    { label: 'Story',    color: '#38bdf8', bg: 'rgba(56,189,248,0.12)'  },
-    'Sub-task': { label: 'Sub-task', color: '#2dd4bf', bg: 'rgba(45,212,191,0.12)'  },
-  };
 
   // - Hierarchy mode (demo / CSV) -----------------------------------------------
 
@@ -213,7 +207,7 @@
         </thead>
         <tbody>
           {#each tableRows as row (row.id)}
-            {@const ts = TYPE_STYLE[row.type]}
+            {@const ts = issueTypeStyle(row.type)}
             {@const ss = STATUS_STYLE[row.status]}
             <tr
               class="row"
@@ -224,7 +218,7 @@
               onmouseleave={() => (vizState.hoveredId = null)}
             >
               <td>
-                <span class="type-pill" style="color:{ts.color}; background:{ts.bg}">{ts.label}</span>
+                <span class="type-pill" style="color:{ts.color}; background:{ts.bg}">{row.type}</span>
               </td>
               <td><span class="row-key">{row.id}</span></td>
               <td>

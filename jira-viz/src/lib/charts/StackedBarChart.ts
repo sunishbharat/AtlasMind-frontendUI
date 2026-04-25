@@ -14,7 +14,8 @@
 
 import type { EChartsOption } from 'echarts';
 import type { ApiIssue } from './chartStore.svelte.js';
-import { BASE_OPTION, paletteColor, paletteGradient } from './theme.js';
+import { BASE_OPTION, paletteColor, paletteGradient, semanticBarGradient } from './theme.js';
+import { seriesColor, stableColorIndex } from '../colorMapping.js';
 
 interface SeriesEntry { name: string; data: number[] }
 
@@ -73,6 +74,7 @@ export class StackedBarChart {
   private _maxCats:    number        = 20;
   private _maxSeries:  number        = 8;
   private _animation:  boolean       = true;
+  private _colorField: string | null = null;
 
   constructor(title = '') {
     this._title = title;
@@ -110,6 +112,11 @@ export class StackedBarChart {
     return this;
   }
 
+  seriesField(field: string | null): this {
+    this._colorField = field;
+    return this;
+  }
+
   // - Output ------------------------------------------------------------------
 
   build(): EChartsOption | null {
@@ -130,7 +137,7 @@ export class StackedBarChart {
       },
       title: {
         text: this._title,
-        textStyle: { color: '#94a3b8', fontSize: 12, fontWeight: 600 },
+        textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 },
         top: 4,
         left: 6,
       },
@@ -138,7 +145,7 @@ export class StackedBarChart {
         show: series.length <= 8,
         top: 4,
         right: 8,
-        textStyle: { color: '#64748b', fontSize: 10 },
+        textStyle: { color: '#94a3b8', fontSize: 10 },
         itemWidth: 10,
         itemHeight: 10,
       },
@@ -148,7 +155,7 @@ export class StackedBarChart {
         axisLine: { lineStyle: { color: '#1e293b' } },
         axisTick: { show: false },
         axisLabel: {
-          color: '#475569',
+          color: '#94a3b8',
           fontSize: 10,
           rotate: cats.length > 6 ? 30 : 0,
           interval: 0,
@@ -159,7 +166,7 @@ export class StackedBarChart {
         type: 'value',
         axisLine: { show: false },
         axisTick: { show: false },
-        axisLabel: { color: '#475569', fontSize: 10 },
+        axisLabel: { color: '#94a3b8', fontSize: 10 },
         splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
         minInterval: 1,
       },
@@ -169,12 +176,12 @@ export class StackedBarChart {
         stack: 'total',
         data: colData[i].map((v) => ({
           value: v,
-          itemStyle: { color: paletteGradient(i, true) },
+          itemStyle: { color: (() => { const sem = seriesColor(this._colorField, s.name); return sem ? semanticBarGradient(sem) : paletteGradient(stableColorIndex(s.name), true); })() },
         })),
         barMaxWidth: 44,
         label: {
           show: true, position: 'inside' as const,
-          color: 'rgba(255,255,255,0.85)', fontSize: 9,
+          color: 'rgba(255,255,255,0.95)', fontSize: 9,
           fontFamily: 'Inter, system-ui, sans-serif',
           formatter: (p: { value: number }) => (p.value > 0 ? (Number.isInteger(p.value) ? String(p.value) : p.value.toFixed(2).replace(/\.?0+$/, '')) : ''),
         },
@@ -237,7 +244,8 @@ export class StackedBarChart {
 
     const chart = new StackedBarChart(title || 'Stacked Bar')
       .categories(categories)
-      .animation(animation);
+      .animation(animation)
+      .seriesField(stackField);
 
     for (const [groupName, groupIssues] of sortedGroups) {
       const catMap: Map<string, number> = useCount
