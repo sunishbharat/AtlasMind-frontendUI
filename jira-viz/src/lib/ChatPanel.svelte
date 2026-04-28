@@ -3,6 +3,8 @@
   import { dataStore } from "./dataStore.svelte.js";
   import { chartStore } from "./charts/index.js";
   import { queryEventClient } from "./QueryEventClient.js";
+  import { authStore } from "./auth.svelte.js";
+  import PatPrompt from "./PatPrompt.svelte";
 
   let { open = false }: { open?: boolean } = $props();
 
@@ -159,7 +161,7 @@
         const res = await fetch("/api/query", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: text, request_id: requestId }),
+          body: JSON.stringify({ query: text, request_id: requestId, pat: authStore.pat || undefined }),
         });
         const data = await res.json();
         const elapsed = Date.now() - t0;
@@ -282,6 +284,11 @@
         </svg>
         AI Assistant
       </div>
+      {#if liveMode && authStore.isAuthenticated}
+        <button class="pat-clear" onclick={() => authStore.clear()} title="Disconnect Jira token">
+          ✕ Token
+        </button>
+      {/if}
       <button
         class="mode-toggle"
         class:live={liveMode && chartStore.backendAlive}
@@ -298,6 +305,11 @@
         {/if}
       </button>
     </div>
+
+    <!-- PAT prompt - shown only in live mode when no token is stored -->
+    {#if liveMode && !authStore.isAuthenticated}
+      <PatPrompt />
+    {/if}
 
     <!-- Message list -->
     <div class="msg-list" bind:this={listEl}>
@@ -430,6 +442,25 @@
     font-size: 13px;
     font-weight: 600;
     color: #e2e8f0;
+  }
+
+  .pat-clear {
+    all: unset;
+    cursor: pointer;
+    font-size: 9px;
+    font-weight: 600;
+    color: #475569;
+    padding: 2px 7px;
+    border-radius: 999px;
+    border: 1px solid #1e293b;
+    background: #0f1e32;
+    transition: color 0.15s, border-color 0.15s;
+    margin-left: auto;
+  }
+
+  .pat-clear:hover {
+    color: #f87171;
+    border-color: rgba(248, 113, 113, 0.3);
   }
 
   .mode-toggle {

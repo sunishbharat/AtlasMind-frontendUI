@@ -40,6 +40,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from aggregator.field_map import apply_field_map as _apply_field_map
+from auth import jira_headers as _jira_headers, startup_log as _auth_startup_log
 from config.defaults import (
     ATLASMIND_BACKEND_HOST,
     ATLASMIND_BACKEND_PORT,
@@ -72,6 +73,8 @@ else:
 HOST = os.environ.get("HOST", _DEFAULT_HOST)
 FRONTEND_PORT = int(os.environ.get("PORT", _DEFAULT_PORT))
 
+# Jira PAT config is managed by auth.py
+
 # Aggregation pipeline: enabled by default; disable via --no-aggregation or AGGREGATION=false
 _env_agg = os.environ.get("AGGREGATION", "").lower()
 AGGREGATION_ENABLED: bool = (
@@ -89,6 +92,7 @@ ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
 print(f"[AtlasMind] Backend URL  : {ATLASMIND_URL}")
 print(f"[AtlasMind] Listening on : {HOST}:{FRONTEND_PORT}")
+print(f"[AtlasMind] Jira PAT     : {_auth_startup_log()}")
 print(f"[AtlasMind] CORS origins : {ALLOWED_ORIGINS}")
 print(f"[AtlasMind] Aggregation  : {'enabled' if AGGREGATION_ENABLED else 'disabled'}")
 
@@ -111,6 +115,8 @@ class QueryRequest(BaseModel):
     request_id: str | None = None  # forwarded to AtlasMind for cancel routing
     limit:      int | None = None
     profile:    str | None = None
+    pat:        str | None = None  # user-supplied PAT from UI; overrides JIRA_PAT env var
+    jira_url:   str | None = None  # user-supplied Jira server URL; overrides JIRA_URL env var
 
 class EventRequest(BaseModel):
     event:      str   # "cancel" | "heartbeat"
@@ -141,9 +147,10 @@ async def run_query(req: QueryRequest):
     query_timeout = llm_timeout + 10  # buffer so backend error propagates cleanly
 
     try:
+        fwd_headers = _jira_headers(req.pat, req.jira_url)
         print(f"[AtlasMind] Querying: {ATLASMIND_URL}/query  params={params}  timeout={query_timeout}s")
         async with httpx.AsyncClient(timeout=query_timeout) as client:
-            resp = await client.get(f"{ATLASMIND_URL}/query", params=params)
+            resp = await client.get(f"{ATLASMIND_URL}/query", params=params, headers=fwd_headers)
             resp.raise_for_status()
 
         # AtlasMind returns JSON — pass the parsed object straight through.
