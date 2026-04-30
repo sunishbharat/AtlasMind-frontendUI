@@ -32,8 +32,16 @@ export interface ChartSpec {
  */
 export interface ServerMeta {
   model_name?: string | null;
+  llm_backend?: string | null;
   llm_timeout?: number | null;
-  // future fields added here without breaking existing clients
+}
+
+/** LLM prompt token breakdown. Null for general (non-JQL) and /raw responses. */
+export interface TokenUsage {
+  system_tokens: number;
+  fields_tokens: number;
+  examples_tokens: number;
+  total_tokens: number;
 }
 
 /** Raw server response shape. Present on both "jql" and "general" routes. */
@@ -41,19 +49,21 @@ export interface QueryResponse {
   type: 'jql' | 'general';
   profile?: string;
   jira_base_url?: string;
-  jql?: string;
+  jql?: string | null;
   total?: number;
   shown?: number;
   examined?: number;
+  post_filters?: string[];
   answer?: string;
   display_fields?: string[];
   /** Maps display name → raw Jira key for custom fields (e.g. "Domain" → "customfield_1xxxx"). */
   field_map?: Record<string, string>;
   issues?: ApiIssue[];
-  chart_spec?: ChartSpec;
+  chart_spec?: ChartSpec | null;
   chartSpec?: ChartSpec;
-  filters?: Record<string, string[]>;
+  filters?: Record<string, string[]> | null;
   meta?: ServerMeta | null;
+  token_usage?: TokenUsage | null;
 }
 
 /** A single Jira issue as returned by the API (fields vary per query). */
@@ -77,6 +87,9 @@ class ChartStore {
 
   /** Metadata from the most recent response. Updated on every response; never cleared. */
   lastMeta = $state<ServerMeta | null>(null);
+
+  /** Token usage from the most recent JQL response. Null for general answers. */
+  lastTokenUsage = $state<TokenUsage | null>(null);
 
   /** True when the last /api/meta poll succeeded. */
   backendAlive = $state(false);
@@ -115,6 +128,7 @@ class ChartStore {
     this.data  = responseData;
     this.query = queryText;
     this.updateMeta(responseData.meta);
+    this.lastTokenUsage = responseData.token_usage ?? null;
 
     // backend sends chart_spec (snake_case) — handle both casings
     const raw       = (responseData as Record<string, unknown>)?.chart_spec ?? responseData?.chartSpec ?? null;

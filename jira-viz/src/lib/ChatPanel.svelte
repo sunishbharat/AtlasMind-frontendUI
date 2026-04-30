@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { QueryResponse } from "./charts/chartStore.svelte.js";
+  import type { QueryResponse, TokenUsage } from "./charts/chartStore.svelte.js";
   import { dataStore } from "./dataStore.svelte.js";
   import { chartStore } from "./charts/index.js";
   import { queryEventClient } from "./QueryEventClient.js";
@@ -14,7 +14,8 @@
     type?: string;
     data?: QueryResponse;
     raw?: boolean;
-    elapsed?: number;  // ms from request start to response received
+    elapsed?: number;
+    tokenUsage?: TokenUsage | null;
   }
 
   let messages = $state<Message[]>([
@@ -170,16 +171,16 @@
         // Cancelled by user mid-flight
         if (data.output?.answer?.startsWith('Error: Query cancelled.') ||
             data.error?.startsWith?.('Error: Query cancelled.')) {
-          messages = [...messages, { role: 'assistant', text: 'Query cancelled.', elapsed }];
+          messages = [...messages, { role: 'assistant', text: 'Query cancelled.', elapsed, tokenUsage: data.output?.token_usage ?? null }];
         } else if (data.error) {
           messages = [
             ...messages,
-            { role: "assistant", text: `**Error:** ${data.error}`, elapsed },
+            { role: "assistant", text: `**Error:** ${data.error}`, elapsed, tokenUsage: data.output?.token_usage ?? null },
           ];
         } else if (data.output?.type === "jql") {
           messages = [
             ...messages,
-            { role: "assistant", type: "table", data: data.output, elapsed },
+            { role: "assistant", type: "table", data: data.output, elapsed, tokenUsage: data.output?.token_usage ?? null },
           ];
           chartStore.setFromResponse(data.output, text);
         } else {
@@ -190,6 +191,7 @@
               role: "assistant",
               text: data.output?.answer ?? data.output ?? "(no output)",
               elapsed,
+              tokenUsage: data.output?.token_usage ?? null,
             },
           ];
         }
@@ -322,17 +324,22 @@
           {#if msg.role === "assistant"}
             <div class="msg-avatar">AI</div>
           {/if}
-          <div
-            class="msg-bubble"
-          >
-            {#if msg.type === "table"}
-              <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-              {@html renderText(summariseResult(msg.data))}
-            {:else if msg.raw}
-              <pre class="msg-pre">{msg.text}</pre>
-            {:else}
-              <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-              {@html renderText(msg.text)}
+          <div class="msg-col">
+            <div class="msg-bubble">
+              {#if msg.type === "table"}
+                <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+                {@html renderText(summariseResult(msg.data))}
+              {:else if msg.raw}
+                <pre class="msg-pre">{msg.text}</pre>
+              {:else}
+                <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+                {@html renderText(msg.text)}
+              {/if}
+            </div>
+            {#if msg.role === 'assistant' && msg.elapsed != null}
+              <div class="msg-token-count">
+                {msg.tokenUsage ? msg.tokenUsage.total_tokens.toLocaleString() + ' tokens' : '—'}
+              </div>
             {/if}
           </div>
           {#if msg.role === 'assistant' && msg.elapsed != null}
@@ -588,7 +595,20 @@
     gap: 4px;
     margin-top: 4px;
     font-size: 9px;
-    color: #334155;
+    color: #4e6884;
+    letter-spacing: 0.03em;
+  }
+
+  .msg-col {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .msg-token-count {
+    font-size: 9px;
+    color: #2d3f55;
+    padding-left: 3px;
     letter-spacing: 0.03em;
   }
 

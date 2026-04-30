@@ -395,6 +395,7 @@
           if (v == null || v === '') label = 'Empty';
           else if (Array.isArray(v)) label = v.length ? fmtCell(key, v) : 'Empty';
           else if (dateCol) label = toDateKey(String(v)) ?? 'Empty';
+          else if (typeof v === 'object') label = fmtJiraValue(v);
           else label = String(v);
           c[label] = (c[label] ?? 0) + 1;
         }
@@ -420,13 +421,18 @@
   const filteredIssues = $derived.by((): ApiIssue[] => {
     const active = Object.entries(activeFilters).filter(([, s]) => s.size > 0);
     if (!active.length) return issues;
+    const fieldsResolved = chartStore.aggregated?.fields_resolved ?? {};
     return issues.filter(issue =>
       active.every(([key, vals]) => {
         const info = filterableMap[key];
-        const raw  = resolveIssueField(issue, key);
+        const rk   = fieldsResolved[key];
+        const raw  = resolveIssueField(issue, key)
+          ?? (rk ? resolveIssueField(issue, rk) : undefined);
         let val: string;
         if (raw == null || raw === '') val = 'Empty';
+        else if (Array.isArray(raw)) val = (raw as unknown[]).length ? fmtCell(key, raw) : 'Empty';
         else if (info?.isDate) val = toDateKey(String(raw)) ?? 'Empty';
+        else if (typeof raw === 'object') val = fmtJiraValue(raw);
         else val = String(raw);
         return vals.has(val);
       }),
@@ -494,25 +500,71 @@
   const clickField = $derived.by((): string | null => {
     if (!activeTab) return null;
     if (activeTab === 'explicit') return axisX || null;
-    const m = activeTab.match(/^(?:bar|pie|line|scatter|stacked)_(.+)$/);
+    // stacked tabs: "stacked_<xField>_<stackField>" — only the x-field is the drill-down key
+    if (activeTab.startsWith('stacked_')) {
+      return activeTab.slice('stacked_'.length).split('_')[0] || null;
+    }
+    const m = activeTab.match(/^(?:bar|pie|line|scatter)_(.+)$/);
     return m ? m[1] : null;
   });
 
-  function handleBarClick(params: { name?: string }): void {
+  function handleBarClick(params: { name?: string; seriesName?: string }): void {
     const value   = params.name;
     const field   = clickField;
-    const baseUrl = chartStore.data?.jira_base_url;
-    if (!value || !field || !baseUrl) return;
+    if (!value || !field) return;
 
-    const raw = chartStore.data?.jql ?? '';
-    // Split off any ORDER BY clause so the new filter is inserted before it
-    const orderMatch = raw.match(/(\s+ORDER\s+BY\s+.+)$/i);
-    const orderClause = orderMatch ? orderMatch[1] : '';
-    const baseJql    = orderMatch ? raw.slice(0, orderMatch.index) : raw;
-    const isEmpty      = value === '—' || value === 'Empty' || value === '';
-    const filterClause = isEmpty ? `${field} is EMPTY` : `${field} = "${value}"`;
-    const jql = baseJql ? `${baseJql} AND ${filterClause}${orderClause}` : filterClause;
-    window.open(`${baseUrl}/issues/?jql=${encodeURIComponent(jql)}`, '_blank', 'noopener');
+    // '—' is specBuilder's null label; the filter system uses 'Empty' for nulls
+    const filterVal    = value             === '—' ? 'Empty' : value;
+    const filterSeries = params.seriesName === '—' ? 'Empty' : params.seriesName;
+
+    // Toggle: clicking the active bar again clears the filter
+    const cur = activeFilters[field];
+    if (cur?.size === 1 && cur.has(filterVal)) {
+      clearAllFilters();
+      return;
+    }
+
+    // Build the filter set
+    const next: Record<string, Set<string>> = { [field]: new Set([filterVal]) };
+    const isCategoricalY = axisY !== 'count' && !numericFieldSet.has(axisY);
+    // Only add the Y-axis series filter when the backend actually returned multiple groups.
+    // A single series (e.g. "Count") means grouping failed — don't filter on a phantom field.
+    const hasMultipleGroups = (chartStore.aggregated?.series?.length ?? 0) > 1;
+    if (isCategoricalY && axisY && filterSeries && filterSeries !== filterVal && hasMultipleGroups) {
+      next[axisY] = new Set([filterSeries]);
+    }
+
+    // Compute matching keys NOW (before reactive state updates) for the Jira URL
+    const activeEntries = Object.entries(next);
+    // fields_resolved maps display name → snake_case pandas key; try it as a fallback
+    // when resolveIssueField can't find the display name in the issue object.
+    const fieldsResolved = chartStore.aggregated?.fields_resolved ?? {};
+    const matchingKeys = issues
+      .filter(issue => activeEntries.every(([key, vals]) => {
+        const info = filterableMap[key];
+        const rk   = fieldsResolved[key];
+        const raw  = resolveIssueField(issue, key)
+          ?? (rk ? resolveIssueField(issue, rk) : undefined);
+        let v: string;
+        if (raw == null || raw === '') v = 'Empty';
+        else if (Array.isArray(raw)) v = (raw as unknown[]).length ? fmtCell(key, raw) : 'Empty';
+        else if (info?.isDate) v = toDateKey(String(raw)) ?? 'Empty';
+        else if (typeof raw === 'object') v = fmtJiraValue(raw);
+        else v = String(raw);
+        return vals.has(v);
+      }))
+      .map(i => i.key as string)
+      .filter(Boolean);
+
+    // Apply table filter
+    activeFilters = next;
+
+    // Open matching issues in Jira using precise key-list JQL
+    const baseUrl = chartStore.data?.jira_base_url;
+    if (baseUrl && matchingKeys.length) {
+      const jql = `key in (${matchingKeys.map(k => `"${k}"`).join(', ')})`;
+      window.open(`${baseUrl}/issues/?jql=${encodeURIComponent(jql)}`, '_blank', 'noopener');
+    }
   }
 
   function openDropdown(col: string): void {
