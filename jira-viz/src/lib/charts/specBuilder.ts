@@ -19,42 +19,59 @@ export interface SpecEntry {
 
 // -- Date helpers -------------------------------------------------------------
 
+export type BucketType = 'day' | 'week' | 'month' | 'quarter' | 'year';
+
 function parseDate(str: unknown): Date | null {
   if (!str) return null;
   const d = new Date(String(str));
   return isNaN(d.getTime()) ? null : d;
 }
 
-function autoBucket(minDate: Date, maxDate: Date): 'day' | 'week' | 'month' {
+function autoBucket(minDate: Date, maxDate: Date): BucketType {
   const days = (maxDate.getTime() - minDate.getTime()) / 864e5;
-  if (days <= 31)  return 'day';
-  if (days <= 180) return 'week';
-  return 'month';
+  if (days <= 31)   return 'day';
+  if (days <= 180)  return 'week';
+  if (days <= 730)  return 'month';
+  if (days <= 1825) return 'quarter';
+  return 'year';
 }
 
-function floorDate(date: Date, bucket: 'day' | 'week' | 'month'): Date {
+function floorDate(date: Date, bucket: BucketType): Date {
   const d = new Date(date);
   if (bucket === 'day') {
     d.setHours(0, 0, 0, 0);
   } else if (bucket === 'week') {
     d.setDate(d.getDate() - d.getDay());
     d.setHours(0, 0, 0, 0);
-  } else {
+  } else if (bucket === 'quarter') {
+    d.setMonth(Math.floor(d.getMonth() / 3) * 3, 1);
+    d.setHours(0, 0, 0, 0);
+  } else if (bucket === 'year') {
+    d.setMonth(0, 1);
+    d.setHours(0, 0, 0, 0);
+  } else {  // month
     d.setDate(1);
     d.setHours(0, 0, 0, 0);
   }
   return d;
 }
 
-function fmtLabel(date: Date, bucket: 'day' | 'week' | 'month'): string {
-  if (bucket === 'day')  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  if (bucket === 'week') return 'W ' + date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+function fmtLabel(date: Date, bucket: BucketType): string {
+  // day / week: "Dec 21, '20" — matches table short date format
+  if (bucket === 'day' || bucket === 'week') {
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+  }
+  if (bucket === 'quarter') {
+    const q = Math.floor(date.getMonth() / 3) + 1;
+    return `Q${q} '${date.toLocaleDateString('en-US', { year: '2-digit' })}`;
+  }
+  if (bucket === 'year') return String(date.getFullYear());
   return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 }
 
 interface BucketEntry { label: string; count: number; ts: number }
 
-function bucketByDate(issues: ApiIssue[], field: string, bucket: 'day' | 'week' | 'month'): BucketEntry[] {
+function bucketByDate(issues: ApiIssue[], field: string, bucket: BucketType): BucketEntry[] {
   const map = new Map<number, number>();
   for (const issue of issues) {
     const d = parseDate(issue[field]);
@@ -72,6 +89,10 @@ function bucketByDate(issues: ApiIssue[], field: string, bucket: 'day' | 'week' 
     result.push({ label: fmtLabel(new Date(cur), bucket), count: map.get(cur) ?? 0, ts: cur });
     if (bucket === 'month') {
       const d = new Date(cur); d.setMonth(d.getMonth() + 1); cur = d.getTime();
+    } else if (bucket === 'quarter') {
+      const d = new Date(cur); d.setMonth(d.getMonth() + 3); cur = d.getTime();
+    } else if (bucket === 'year') {
+      const d = new Date(cur); d.setFullYear(d.getFullYear() + 1); cur = d.getTime();
     } else {
       cur += (bucket === 'week' ? 7 : 1) * 864e5;
     }
@@ -95,7 +116,7 @@ function bucketSumByDate(
   issues: ApiIssue[],
   dateField: string,
   valueField: string,
-  bucket: 'day' | 'week' | 'month',
+  bucket: BucketType,
 ): Map<number, number> {
   const map = new Map<number, number>();
   for (const issue of issues) {
@@ -343,11 +364,11 @@ export function buildPie(entries: [string, number][], title: string, maxItems = 
   };
 }
 
-export function buildTrend(issues: ApiIssue[], animation = true): EChartsOption | null {
+export function buildTrend(issues: ApiIssue[], animation = true, forceBucket?: BucketType): EChartsOption | null {
   const allDates = issues.map(i => parseDate(i.created)).filter((d): d is Date => d !== null);
   if (!allDates.length) return null;
 
-  const bucket  = autoBucket(new Date(Math.min(...allDates.map(d => d.getTime()))), new Date(Math.max(...allDates.map(d => d.getTime()))));
+  const bucket  = forceBucket ?? autoBucket(new Date(Math.min(...allDates.map(d => d.getTime()))), new Date(Math.max(...allDates.map(d => d.getTime()))));
   const created = bucketByDate(issues, 'created', bucket);
   if (created.length < 2) return null;
 
@@ -402,6 +423,7 @@ export function buildGroupedTrend(
   yField: string,
   title: string,
   animation = true,
+  forceBucket?: BucketType,
 ): EChartsOption | null {
   if (!issues.length) return null;
 
@@ -411,7 +433,7 @@ export function buildGroupedTrend(
 
   const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
   const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())));
-  const bucket  = autoBucket(minDate, maxDate);
+  const bucket  = forceBucket ?? autoBucket(minDate, maxDate);
 
   // Full gapless bucket spine — every period between min and max
   const spine = bucketByDate(issues, xField, bucket);
@@ -1015,7 +1037,7 @@ export function buildSingleLine(entries: [string, number][], title: string, anim
  * Build a single spec from an explicit server-provided chartSpec.
  * Expected shape: { type, title, x_field, y_field, color_field? }
  */
-export function fromExplicitSpec(chartSpec: ChartSpec, issues: ApiIssue[], animation = true): EChartsOption | null {
+export function fromExplicitSpec(chartSpec: ChartSpec, issues: ApiIssue[], animation = true, forceBucket?: BucketType): EChartsOption | null {
   if (!chartSpec || !issues.length) return null;
 
   // Normalise type — backend may send "multi-line", "multiline", etc.
@@ -1063,17 +1085,17 @@ export function fromExplicitSpec(chartSpec: ChartSpec, issues: ApiIssue[], anima
         console.warn('[fromExplicitSpec] → buildGroupedTrend | groupField:', groupField, '| yField:', chartSpec.y_field);
         return buildGroupedTrend(
           issues, chartSpec.x_field, groupField,
-          chartSpec.y_field ?? 'count', chartSpec.title ?? 'Trend', animation,
+          chartSpec.y_field ?? 'count', chartSpec.title ?? 'Trend', animation, forceBucket,
         );
       }
       console.warn('[fromExplicitSpec] → buildTrend (no group field found)');
-      return buildTrend(issues, animation);
+      return buildTrend(issues, animation, forceBucket);
     }
 
-    // Bar/pie on a date field → bucket by day/week/month
+    // Bar/pie on a date field → bucket by day/week/month/quarter/year
     const allDates = issues.map(i => parseDate(i[chartSpec.x_field])).filter((d): d is Date => d !== null);
     if (!allDates.length) return null;
-    const bucket   = autoBucket(
+    const bucket   = forceBucket ?? autoBucket(
       new Date(Math.min(...allDates.map(d => d.getTime()))),
       new Date(Math.max(...allDates.map(d => d.getTime()))),
     );

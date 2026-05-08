@@ -10,6 +10,7 @@
   import { buildAllSpecs, fromExplicitSpec, buildGroupedCategorical, buildGroupedTrend, autoDetectGroupField, buildPie } from './specBuilder.js';
   import { BASE_OPTION, paletteGradient, paletteColor, semanticBarGradient } from './theme.js';
   import { seriesColor, stableColorIndex } from '../colorMapping.js';
+  import { JiraDateFormatter } from '../dateFormat.js';
   import { features } from '../features.svelte.js';
   import ChartRenderer from './ChartRenderer.svelte';
   import AIHierarchyView from './AIHierarchyView.svelte';
@@ -81,6 +82,101 @@
   let openAxisMenu = $state<'x' | 'y' | 'type' | null>(null);
   let axisSearch   = $state('');
 
+  // - Date range filter --------------------------------------------------------
+
+  type DatePreset = 'week' | 'month' | 'quarter' | 'year' | 'custom';
+
+  interface DateRange { from: Date; to: Date }
+
+  const dateFields = $derived.by((): string[] => {
+    if (!issues.length) return [];
+    return allFields.filter(f => {
+      const sample = resolveIssueField(
+        issues.find(i => resolveIssueField(i, f) != null) ?? {},
+        f,
+      );
+      return isDateLike(f, sample);
+    });
+  });
+
+  let dateField  = $state('');
+  let datePreset = $state<DatePreset | null>(null);
+  let dateFrom   = $state('');
+  let dateTo     = $state('');
+
+  $effect((): void => {
+    if (dateFields.length) {
+      if (!dateField || !dateFields.includes(dateField)) {
+        dateField = dateFields.find(f => f === 'created' || f === 'createdDate') ?? dateFields[0];
+      }
+    } else {
+      dateField = '';
+    }
+  });
+
+  function presetToRange(preset: Exclude<DatePreset, 'custom'>): DateRange {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    switch (preset) {
+      case 'week': {
+        const dow = now.getDay();
+        const from = new Date(now);
+        from.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
+        from.setHours(0, 0, 0, 0);
+        const to = new Date(from);
+        to.setDate(from.getDate() + 6);
+        to.setHours(23, 59, 59, 999);
+        return { from, to };
+      }
+      case 'month':
+        return { from: new Date(y, m, 1, 0, 0, 0), to: new Date(y, m + 1, 0, 23, 59, 59, 999) };
+      case 'quarter': {
+        const q = Math.floor(m / 3);
+        return { from: new Date(y, q * 3, 1, 0, 0, 0), to: new Date(y, q * 3 + 3, 0, 23, 59, 59, 999) };
+      }
+      case 'year':
+        return { from: new Date(y, 0, 1, 0, 0, 0), to: new Date(y, 11, 31, 23, 59, 59, 999) };
+    }
+  }
+
+  const activeDateRange = $derived.by((): DateRange | null => {
+    if (!datePreset || !dateField) return null;
+    if (datePreset === 'custom') {
+      if (!dateFrom || !dateTo) return null;
+      return { from: new Date(dateFrom + 'T00:00:00'), to: new Date(dateTo + 'T23:59:59') };
+    }
+    return presetToRange(datePreset);
+  });
+
+  const hasDateFilter = $derived(activeDateRange !== null);
+
+  const dateFilteredIssues = $derived.by((): ApiIssue[] => {
+    if (!activeDateRange || !dateField) return issues;
+    const { from, to } = activeDateRange;
+    return issues.filter((issue): boolean => {
+      const raw = resolveIssueField(issue, dateField);
+      if (raw == null) return false;
+      const d = new Date(String(raw));
+      return !isNaN(d.getTime()) && d >= from && d <= to;
+    });
+  });
+
+  function fmtDateShort(d: Date): string {
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' });
+  }
+
+  function setDatePreset(p: DatePreset): void {
+    datePreset = datePreset === p ? null : p;
+    if (p !== 'custom') { dateFrom = ''; dateTo = ''; }
+  }
+
+  function clearDateFilter(): void {
+    datePreset = null;
+    dateFrom   = '';
+    dateTo     = '';
+  }
+
   $effect(() => {
     if (chartStore.chartSpec) {
       axisX    = chartStore.chartSpec.x_field;
@@ -125,7 +221,7 @@
         title:          `${axisX} × ${axisY}`,
         max_categories: 20,
       };
-      console.log('[CV] triggerAggregate →', { axisX, axisY, axisType, isCategoricalY, issueCount: issues.length });
+      console.log('[CV] triggerAggregate →', { axisX, axisY, axisType, isCategoricalY, issueCount: dateFilteredIssues.length });
       console.log('[CV] POST /api/aggregate chart_spec:', chartSpec);
 
       try {
@@ -133,7 +229,7 @@
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            issues,
+            issues: dateFilteredIssues,
             display_fields: displayFields,
             active_filters: activeFiltersPayload,
             react_to_filters: reactToFilters,
@@ -159,7 +255,7 @@
 
   $effect(() => {
     // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-    axisX; axisY; axisType; activeFilters; reactToFilters;
+    axisX; axisY; axisType; activeFilters; reactToFilters; activeDateRange; dateField;
     triggerAggregate();
   });
 
@@ -345,6 +441,8 @@
       return (val as unknown[]).join(', ');
     }
     if (typeof val === 'object') return JSON.stringify(val);
+    const dateFmt = JiraDateFormatter.format(val);
+    if (dateFmt !== null) return dateFmt;
     // Numeric strings (e.g. effort_days returned as "3.14159")
     const n = Number(val);
     if (String(val) !== '' && isFinite(n)) return fmtNum(n);
@@ -355,22 +453,15 @@
   const DATE_KEYS = new Set(['created', 'resolutiondate', 'updated', 'duedate', 'resolutionDate', 'createdDate']);
 
   function isDateLike(key: string, sample: unknown): boolean {
-    return DATE_KEYS.has(key) || DATE_KEYS.has(key.toLowerCase()) || /^\d{4}-\d{2}-\d{2}/.test(String(sample ?? ''));
+    return DATE_KEYS.has(key) || DATE_KEYS.has(key.toLowerCase()) || JiraDateFormatter.isIsoDate(String(sample ?? ''));
   }
 
   function toDateKey(str: string): string | null {
-    try {
-      const d = new Date(str);
-      return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
-    } catch { return null; }
+    return JiraDateFormatter.toDateKey(str);
   }
 
   function fmtDateKey(key: string): string {
-    if (!key || key === 'Empty') return key ?? 'Empty';
-    const m = key.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (!m) return key;
-    const [, y, mo, d] = m.map(Number);
-    return new Date(y, mo - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return JiraDateFormatter.formatFilterKey(key);
   }
 
   const MAX_FILTER_VALUES = 100;
@@ -420,9 +511,9 @@
 
   const filteredIssues = $derived.by((): ApiIssue[] => {
     const active = Object.entries(activeFilters).filter(([, s]) => s.size > 0);
-    if (!active.length) return issues;
+    if (!active.length) return dateFilteredIssues;
     const fieldsResolved = chartStore.aggregated?.fields_resolved ?? {};
-    return issues.filter(issue =>
+    return dateFilteredIssues.filter(issue =>
       active.every(([key, vals]) => {
         const info = filterableMap[key];
         const rk   = fieldsResolved[key];
@@ -448,7 +539,7 @@
 
   const specs = $derived.by((): Record<string, SpecEntry> => {
     // Auto charts always built from the full (or filtered) issue set
-    const src  = reactToFilters && hasActiveFilters ? filteredIssues : issues;
+    const src  = reactToFilters && hasActiveFilters ? filteredIssues : dateFilteredIssues;
     const auto = buildAllSpecs(src, features.charts.maxItems, features.charts.animation);
 
     // Aggregated result from axis selectors takes highest priority
@@ -930,9 +1021,6 @@
         {#if hasTable}
           <div class="cv-table-header">
             <span class="cv-table-label">Results</span>
-            {#if chartStore.data?.jql}
-              <code class="cv-jql" title={chartStore.data.jql}>{chartStore.data.jql}</code>
-            {/if}
             {#if chartStore.data?.jira_base_url && chartStore.data?.jql}
               <a
                 class="cv-table-count cv-table-count--link"
@@ -941,11 +1029,11 @@
                 rel="noreferrer"
                 title="Open in Jira"
               >
-                {hasActiveFilters ? `${filteredIssues.length} of ` : ''}{chartStore.data?.shown ?? issues.length}{chartStore.data?.total ? ` / ${chartStore.data.total}` : ''}
+                {(hasActiveFilters || hasDateFilter) ? `${filteredIssues.length} of ` : ''}{chartStore.data?.shown ?? issues.length}{chartStore.data?.total ? ` / ${chartStore.data.total}` : ''}
               </a>
             {:else}
               <span class="cv-table-count">
-                {hasActiveFilters ? `${filteredIssues.length} of ` : ''}{chartStore.data?.shown ?? issues.length}{chartStore.data?.total ? ` / ${chartStore.data.total}` : ''}
+                {(hasActiveFilters || hasDateFilter) ? `${filteredIssues.length} of ` : ''}{chartStore.data?.shown ?? issues.length}{chartStore.data?.total ? ` / ${chartStore.data.total}` : ''}
               </span>
             {/if}
             {#if hasActiveFilters}
@@ -986,6 +1074,76 @@
               </button>
             </div>
           </div>
+
+          <!-- Date range filter bar -->
+          {#if dateFields.length}
+            <div class="cv-date-filter">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style="flex-shrink:0;color:#6b8aaa">
+                <rect x="1" y="1.5" width="8" height="7.5" rx="1" stroke="currentColor" stroke-width="1.1"/>
+                <line x1="3" y1="1.5" x2="3" y2="0" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                <line x1="7" y1="1.5" x2="7" y2="0" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                <line x1="1" y1="4" x2="9" y2="4" stroke="currentColor" stroke-width="1"/>
+              </svg>
+              <!-- Date field picker -->
+              <div class="cv-col-filter">
+                <button
+                  class="cv-date-field-btn"
+                  onclick={() => { openFilter = openFilter === '__date_field__' ? null : '__date_field__'; filterSearch = ''; }}
+                >
+                  {dateField || '—'}
+                  <svg width="7" height="7" viewBox="0 0 8 8" fill="none">
+                    <path d="M1.5 3l2.5 2.5L6.5 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                  </svg>
+                </button>
+                {#if openFilter === '__date_field__'}
+                  <div class="col-filter-menu">
+                    <div class="col-filter-head">Date field</div>
+                    <div class="col-filter-list">
+                      {#each dateFields as f}
+                        <button
+                          class="col-filter-item"
+                          class:checked={dateField === f}
+                          onclick={() => { dateField = f; openFilter = null; }}
+                        >
+                          <span class="col-filter-val">{f}</span>
+                        </button>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+              </div>
+              <!-- Preset buttons -->
+              <div class="cv-date-presets">
+                {#each (['week', 'month', 'quarter', 'year'] as const) as p}
+                  <button
+                    class="cv-date-preset"
+                    class:active={datePreset === p}
+                    onclick={() => setDatePreset(p)}
+                  >{p === 'week' ? 'Wk' : p === 'month' ? 'Mo' : p === 'quarter' ? 'Qtr' : 'Yr'}</button>
+                {/each}
+                <button
+                  class="cv-date-preset cv-date-preset--custom"
+                  class:active={datePreset === 'custom'}
+                  onclick={() => setDatePreset('custom')}
+                >Custom</button>
+              </div>
+              <!-- Custom date inputs -->
+              {#if datePreset === 'custom'}
+                <input type="date" class="cv-date-input" bind:value={dateFrom} />
+                <span class="cv-date-sep">–</span>
+                <input type="date" class="cv-date-input" bind:value={dateTo} />
+              {:else if activeDateRange}
+                <span class="cv-date-range-text">
+                  {fmtDateShort(activeDateRange.from)} – {fmtDateShort(activeDateRange.to)}
+                </span>
+              {/if}
+              <!-- Count + clear -->
+              {#if hasDateFilter}
+                <span class="cv-date-count">{dateFilteredIssues.length} / {issues.length}</span>
+                <button class="cv-date-clear" onclick={clearDateFilter} title="Clear date filter">✕</button>
+              {/if}
+            </div>
+          {/if}
 
           {#if tableMode === 'hierarchy'}
             <AIHierarchyView
@@ -1660,17 +1818,6 @@
     flex-shrink: 0;
   }
 
-  .cv-jql {
-    font-family: 'Consolas', monospace;
-    font-size: 9.5px;
-    color: #6b8aaa;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-    min-width: 0;
-  }
-
   .cv-table-count {
     font-size: 10px;
     font-weight: 700;
@@ -1801,6 +1948,104 @@
   }
 
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Date range filter bar ───────────────────────────────────────────────── */
+  .cv-date-filter {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 2px;
+    flex-shrink: 0;
+    border-bottom: 1px solid #1e293b;
+    flex-wrap: wrap;
+  }
+
+  .cv-date-field-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid #1e293b;
+    background: none;
+    cursor: pointer;
+    font-size: 10px;
+    color: #94a3b8;
+    white-space: nowrap;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  .cv-date-field-btn:hover { color: #cbd5e1; border-color: #334155; }
+
+  .cv-date-presets {
+    display: flex;
+    gap: 2px;
+  }
+
+  .cv-date-preset {
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid #1e293b;
+    background: none;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 500;
+    color: #7a9ab8;
+    white-space: nowrap;
+    transition: color 0.12s, border-color 0.12s, background 0.12s;
+  }
+  .cv-date-preset:hover { color: #cbd5e1; border-color: #334155; }
+  .cv-date-preset.active {
+    color: #818cf8;
+    border-color: rgba(129, 140, 248, 0.4);
+    background: rgba(129, 140, 248, 0.1);
+  }
+  .cv-date-preset--custom { font-size: 9.5px; }
+
+  .cv-date-input {
+    background: #070f1c;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    color: #94a3b8;
+    font-size: 10px;
+    padding: 2px 5px;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.12s;
+  }
+  .cv-date-input:focus { border-color: rgba(129, 140, 248, 0.4); }
+
+  .cv-date-sep {
+    font-size: 10px;
+    color: #4e6884;
+    flex-shrink: 0;
+  }
+
+  .cv-date-range-text {
+    font-size: 10px;
+    color: #818cf8;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .cv-date-count {
+    font-size: 9.5px;
+    font-weight: 700;
+    color: #7a9ab8;
+    white-space: nowrap;
+    margin-left: auto;
+  }
+
+  .cv-date-clear {
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 9px;
+    color: #475569;
+    transition: color 0.12s;
+  }
+  .cv-date-clear:hover { color: #f87171; }
 
   /* ── Y-axis group badge ──────────────────────────────────────────────────── */
   .cv-group-badge {

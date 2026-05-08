@@ -34,7 +34,13 @@ POINT_FIELDS = ("story_points", "points", "sp")
 LINE_ALIASES = {"line", "multi-line", "multiline", "multi_line"}
 COUNT_WORDS  = {"count", "count of issues", "number", "total"}
 
-_BUCKET_FREQ = {"day": "D", "week": "W-MON", "month": "ME"}
+_BUCKET_FREQ = {
+    "day":     "D",
+    "week":    "W-MON",
+    "month":   "ME",
+    "quarter": "QE-DEC",
+    "year":    "YE-DEC",
+}
 
 
 # - Helpers --------------------------------------------------------------------
@@ -50,19 +56,31 @@ def _normalise_type(chart_type: str) -> str:
 
 
 def _fmt_bucket_label(ts: pd.Timestamp, bucket: str) -> str:
-    if bucket == "day":
-        return ts.strftime("%b %-d")
-    if bucket == "week":
-        return "W " + ts.strftime("%b %-d")
-    return ts.strftime("%b '%y")
+    day = str(ts.day)  # cross-platform: %-d is Linux-only
+    short_yr = ts.strftime("%y")
+    # day / week: "Dec 21, '20" — matches table short date format
+    if bucket in ("day", "week"):
+        return f"{ts.strftime('%b')} {day}, '{short_yr}"
+    if bucket == "quarter":
+        q = (ts.month - 1) // 3 + 1
+        return f"Q{q} '{short_yr}"
+    if bucket == "year":
+        return str(ts.year)
+    return f"{ts.strftime('%b')} '{short_yr}"  # month (default)
 
 
 def _auto_bucket(date_range_days: int) -> str:
-    if date_range_days <= 31:
-        return "day"
-    if date_range_days <= 180:
-        return "week"
-    return "month"
+    if date_range_days <= 31:   return "day"
+    if date_range_days <= 180:  return "week"
+    if date_range_days <= 730:  return "month"
+    if date_range_days <= 1825: return "quarter"
+    return "year"
+
+
+def _resolve_bucket(spec: "ChartSpecInput", date_range_days: int) -> str:
+    if spec.date_bucket and spec.date_bucket != "auto":
+        return spec.date_bucket
+    return _auto_bucket(date_range_days)
 
 
 def _flatten_value(val: Any) -> Any:
@@ -161,7 +179,11 @@ class AggregationEngine:
             else:
                 result = self._agg_line_categorical(df, spec, resolved_x, resolved_y, resolved_color, title)
         else:
-            result = self._agg_bar(df, spec, resolved_x, resolved_y, title)
+            # bar + date x-field → bucket dates like a line chart, then render as bars
+            if resolved_x in df.columns and self._is_date_column(df, resolved_x):
+                result = self._agg_line_date(df, spec, resolved_x, resolved_y, resolved_color, title)
+            else:
+                result = self._agg_bar(df, spec, resolved_x, resolved_y, title)
 
         result.warnings = all_warnings + result.warnings
         result.fields_resolved = fields_resolved
@@ -438,13 +460,15 @@ class AggregationEngine:
             )
 
         date_range_days = int((valid.max() - valid.min()).days)
-        bucket = _auto_bucket(date_range_days)
+        bucket = _resolve_bucket(spec, date_range_days)
         freq   = _BUCKET_FREQ[bucket]
 
         temp = df.copy()
         temp["_date"] = date_col
         temp = temp.dropna(subset=["_date"])
-        temp["_bucket"] = temp["_date"].dt.to_period(freq).dt.start_time.dt.tz_localize("UTC")
+        # Strip tz before to_period to avoid pandas UserWarning; re-localize after
+        _naive = temp["_date"].dt.tz_convert("UTC").dt.tz_localize(None)
+        temp["_bucket"] = _naive.dt.to_period(freq).dt.start_time.dt.tz_localize("UTC")
 
         spine = pd.date_range(temp["_bucket"].min(), temp["_bucket"].max(), freq=freq, tz="UTC")
         x_axis = [_fmt_bucket_label(pd.Timestamp(ts), bucket) for ts in spine]
@@ -493,17 +517,48 @@ class AggregationEngine:
     ) -> AggregateResponse:
         warnings: list[str] = []
 
-        if stack_field is None:
-            warnings.append("no stack field found — falling back to bar chart")
-            return self._agg_bar(df, spec, resolved_x, resolved_y, title)
-
-        if resolved_x not in df.columns or stack_field not in df.columns:
-            missing = [c for c in (resolved_x, stack_field) if c not in df.columns]
+        if resolved_x not in df.columns:
             return AggregateResponse(
                 chart_type="stacked_bar", title=title, x_axis=[], series=[],
                 pie_data=None, scatter_data=None, total_issues=0,
-                fields_resolved={}, warnings=[f"columns not found: {missing}"],
+                fields_resolved={}, warnings=[f"column '{resolved_x}' not found"],
             )
+
+        if stack_field and stack_field not in df.columns:
+            return AggregateResponse(
+                chart_type="stacked_bar", title=title, x_axis=[], series=[],
+                pie_data=None, scatter_data=None, total_issues=0,
+                fields_resolved={}, warnings=[f"stack column '{stack_field}' not found"],
+            )
+
+        # Bucket date X field before any grouping or fallback so labels match table format
+        x_order_override: list[str] | None = None
+        if self._is_date_column(df, resolved_x):
+            date_col = pd.to_datetime(df[resolved_x], errors="coerce", utc=True)
+            valid = date_col.dropna()
+            if not valid.empty:
+                date_range_days = int((valid.max() - valid.min()).days)
+                bucket = _resolve_bucket(spec, date_range_days)
+                freq = _BUCKET_FREQ[bucket]
+                df = df.copy()
+                df["_date"] = date_col
+                df = df.dropna(subset=["_date"])
+                # Strip tz before to_period to avoid pandas UserWarning; re-localize after
+                _naive = df["_date"].dt.tz_convert("UTC").dt.tz_localize(None)
+                df["_bucket_ts"] = _naive.dt.to_period(freq).dt.start_time.dt.tz_localize("UTC")
+                df[resolved_x] = df["_bucket_ts"].apply(
+                    lambda ts: _fmt_bucket_label(pd.Timestamp(ts), bucket)
+                )
+                # Full chronological spine so gaps are preserved
+                spine = pd.date_range(
+                    df["_bucket_ts"].min(), df["_bucket_ts"].max(), freq=freq, tz="UTC"
+                )
+                x_order_override = [_fmt_bucket_label(pd.Timestamp(ts), bucket) for ts in spine]
+
+        # After date bucketing, fall back to bar with bucketed df if no stack field
+        if stack_field is None:
+            warnings.append("no stack field — falling back to bar chart")
+            return self._agg_bar(df, spec, resolved_x, resolved_y, title)
 
         clean_x = df[resolved_x].fillna("—").astype(str)
         clean_s = df[stack_field].fillna("—").astype(str)
@@ -534,12 +589,15 @@ class AggregationEngine:
                     .unstack("s", fill_value=0)
                 )
 
-        # Cap rows and columns
-        x_order = (
-            clean_x.value_counts()
-            .head(spec.max_categories)
-            .index.tolist()
-        )
+        # Date X: chronological spine order; categorical X: frequency order
+        if x_order_override is not None:
+            x_order = [x for x in x_order_override if x in pivot.index]
+        else:
+            x_order = (
+                clean_x.value_counts()
+                .head(spec.max_categories)
+                .index.tolist()
+            )
         pivot = pivot.reindex([x for x in x_order if x in pivot.index])
         stack_cols = pivot.columns.tolist()[: spec.max_series]
 
@@ -630,7 +688,7 @@ class AggregationEngine:
             )
 
         date_range_days = int((created_dates.max() - created_dates.min()).days)
-        bucket = _auto_bucket(date_range_days)
+        bucket = _resolve_bucket(spec, date_range_days)
         freq   = _BUCKET_FREQ[bucket]
 
         temp = df.copy()

@@ -5,6 +5,7 @@
   import { dataStore } from '../dataStore.svelte.js';
   import { chartStore } from '../charts/index.js';
   import { vizState } from '../state.svelte.js';
+  import { JiraDateFormatter } from '../dateFormat.js';
 
 
   // - Hierarchy mode (demo / CSV) -----------------------------------------------
@@ -121,15 +122,6 @@
     '',
   );
 
-  function isDate(s: string): boolean {
-    return /^\d{4}-\d{2}-\d{2}/.test(s);
-  }
-
-  function fmtDate(s: string): string {
-    try {
-      return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
-    } catch { return s; }
-  }
 </script>
 
 {#if dataStore.fromAI}
@@ -174,8 +166,9 @@
                     <span class="row-summary">{fmtVal(raw)}</span>
                   {:else}
                     {@const str = fmtVal(raw)}
-                    {#if str !== '—' && isDate(str)}
-                      <span class="date-cell">{fmtDate(str)}</span>
+                    {@const dateFmt = str !== '—' ? JiraDateFormatter.format(str) : null}
+                    {#if dateFmt !== null}
+                      <span class="date-cell">{dateFmt}</span>
                     {:else}
                       <span class="cell-val">{str}</span>
                     {/if}

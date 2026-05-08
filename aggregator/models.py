@@ -5,7 +5,7 @@ Pydantic models for the aggregation pipeline request/response contract.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -18,6 +18,7 @@ class ChartSpecInput(BaseModel):
     x_field: str
     y_field: str                        # "count" or a numeric field name
     color_field: str | None = None      # optional grouping / stack dimension
+    date_bucket: Literal["auto", "day", "week", "month", "quarter", "year"] | None = None
     max_categories: int = Field(default=20, ge=1, le=100)
     max_series: int = Field(default=8, ge=1, le=20)
 

@@ -27,6 +27,7 @@ const STATUS: Record<string, ColorDef> = {
   'on hold':     { color: '#FF7452', bg: 'rgba(255,116,82,0.15)'  },
   'done':        { color: '#36B37E', bg: 'rgba(54,179,126,0.15)'  },
   'closed':      { color: '#00875A', bg: 'rgba(0,135,90,0.15)'    },
+  'reopened':    { color: '#FFAB00', bg: 'rgba(255,171,0,0.15)'   },
   'resolved':    { color: '#36B37E', bg: 'rgba(54,179,126,0.15)'  },
   "won't fix":   { color: '#97A0AF', bg: 'rgba(151,160,175,0.15)' },
   'wont fix':    { color: '#97A0AF', bg: 'rgba(151,160,175,0.15)' },
