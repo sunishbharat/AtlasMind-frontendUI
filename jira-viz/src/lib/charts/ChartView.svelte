@@ -1951,13 +1951,7 @@
 
   /* ── Date range filter bar ───────────────────────────────────────────────── */
   .cv-date-filter {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 5px 2px;
-    flex-shrink: 0;
-    border-bottom: 1px solid #1e293b;
-    flex-wrap: wrap;
+    display: none; /* Hidden - date grouping removed */
   }
 
   .cv-date-field-btn {
@@ -1977,8 +1971,7 @@
   .cv-date-field-btn:hover { color: #cbd5e1; border-color: #334155; }
 
   .cv-date-presets {
-    display: flex;
-    gap: 2px;
+    display: none; /* Hidden - date grouping removed */
   }
 
   .cv-date-preset {
