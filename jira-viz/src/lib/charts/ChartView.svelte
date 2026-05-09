@@ -28,8 +28,18 @@
 
   // Columns to render beyond the fixed Key + Summary columns.
   // Backend display_fields may include "Key"/"Summary" which are already fixed.
+  // Deduplicate display fields (case-insensitive) to avoid duplicate columns.
   const FIXED_COLS = new Set(['key', 'Key', 'summary', 'Summary']);
-  const tableDisplayFields = $derived(displayFields.filter(c => !FIXED_COLS.has(c)));
+  const tableDisplayFields = $derived.by(() => {
+    const seen = new Set<string>();
+    return displayFields.filter(c => {
+      if (FIXED_COLS.has(c)) return false;
+      const lower = c.toLowerCase();
+      if (seen.has(lower)) return false;
+      seen.add(lower);
+      return true;
+    });
+  });
 
   // - Axis selector state ------------------------------------------------------
   const CHART_TYPES = ['bar', 'stacked_bar', 'pie', 'line', 'scatter', 'trend'];
@@ -390,8 +400,19 @@
   // Contract: every display_fields entry is the exact key in the issue dict.
   // Keys are renamed from customfield_1xxxx → display name by main.py before reaching here.
   // Lowercase fallback covers demo-mode hardcoded data (status, assignee, etc.).
+  // Display name → API key mapping for fields that don't match via simple lowercase.
+  const FIELD_NAME_MAP: Record<string, string> = {
+    'Issue Type': 'issuetype',
+    'Issue Id': 'id',
+    'Created Date': 'created',
+    'Updated Date': 'updated',
+    'Due Date': 'duedate',
+  };
   function resolveIssueField(issue: ApiIssue, displayName: string): unknown {
     if (displayName in issue) return issue[displayName];
+    if (FIELD_NAME_MAP[displayName] && FIELD_NAME_MAP[displayName] in issue) {
+      return issue[FIELD_NAME_MAP[displayName]];
+    }
     const lower = displayName.toLowerCase();
     if (lower in issue) return issue[lower];
     return undefined;
@@ -440,7 +461,7 @@
       }
       return (val as unknown[]).join(', ');
     }
-    if (typeof val === 'object') return JSON.stringify(val);
+    if (typeof val === 'object') return fmtJiraValue(val);
     const dateFmt = JiraDateFormatter.format(val);
     if (dateFmt !== null) return dateFmt;
     // Numeric strings (e.g. effort_days returned as "3.14159")
