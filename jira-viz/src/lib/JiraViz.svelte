@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { ComponentType } from "svelte";
+  import { fade, scale } from "svelte/transition";
+  import { quintOut } from "svelte/easing";
   import Logo from "./Logo.svelte";
   import HierarchyView from "./views/HierarchyView.svelte";
   import TableView from "./views/TableView.svelte";
@@ -207,8 +209,14 @@
     <div class="row-sep"></div>
 
     <div class="data-right">
-      <div class="data-right-row">
-        <div class="data-source">
+      <div class="data-row">
+        <span class="model-badge" class:offline={!chartStore.backendAlive}>
+          <span class="model-dot" class:offline={!chartStore.backendAlive}></span>
+          {chartStore.lastMeta?.model_name ?? "Connecting..."}
+        </span>
+        <div class="row-sep"></div>
+        <div class="data-controls">
+          <div class="data-source">
           {#if dataStore.csvFilename}
             <span class="ds-dot ds-dot--file"></span>
             <svg width="11" height="11" viewBox="0 0 12 12"
@@ -244,12 +252,12 @@
             <span class="ds-dot ds-dot--sample"></span>
             <span class="ds-name ds-name--sample">Sample data</span>
           {/if}
-        </div>
+          </div>
 
-        <div class="row-sep"></div>
+          <div class="row-sep"></div>
 
-        <button
-          class="upload-btn"
+          <button
+            class="upload-btn"
           onclick={() => fileInput.click()}
           disabled={uploading}
         >
@@ -309,6 +317,7 @@
           >
         </div>
       {/if}
+      </div>
     </div>
   </div>
 
@@ -413,13 +422,17 @@
         </div>
       </div>
 
-      {#if mainView === 'chart'}
-        <div class="ai-chart-view">
-          <ChartView />
-        </div>
-      {:else}
-        <DashboardV2 />
-      {/if}
+      {#key mainView}
+        {#if mainView === 'chart'}
+          <div class="ai-chart-view" in:scale={{ duration: 250, start: 0.96, easing: quintOut }} out:fade={{ duration: 150 }}>
+            <ChartView />
+          </div>
+        {:else}
+          <div class="dashboard-view" in:scale={{ duration: 250, start: 0.96, easing: quintOut }} out:fade={{ duration: 150 }}>
+            <DashboardV2 />
+          </div>
+        {/if}
+      {/key}
 
       <!-- Detail panel -->
       <div class="detail-panel">
@@ -827,6 +840,19 @@
     gap: 8px;
   }
 
+  .data-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .data-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+
   .upload-btn {
     display: flex;
     align-items: center;
@@ -980,6 +1006,7 @@
     background: rgba(34, 197, 94, 0.07);
     border: 1px solid rgba(34, 197, 94, 0.25);
     border-radius: 4px;
+    flex-shrink: 0;
     padding: 2px 7px;
     letter-spacing: 0.03em;
     white-space: nowrap;
@@ -1067,7 +1094,8 @@
     overflow: hidden;
   }
 
-  .ai-chart-view {
+  .ai-chart-view,
+  .dashboard-view {
     flex: 1;
     display: flex;
     flex-direction: column;

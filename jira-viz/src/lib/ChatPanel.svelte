@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { QueryResponse, TokenUsage } from "./charts/chartStore.svelte.js";
-  import { dataStore } from "./dataStore.svelte.js";
   import { chartStore } from "./charts/index.js";
   import { queryEventClient } from "./QueryEventClient.js";
   import { authStore } from "./auth.svelte.js";
@@ -29,116 +28,12 @@
   let loading         = $state(false);
   let activeRequestId = $state<string | null>(null);
   let bursting        = $state(false);
-  let liveMode = $state(window.location.pathname.startsWith("/live"));
   let listEl: HTMLDivElement;
 
   $effect(() => {
     messages;
     if (listEl) setTimeout(() => (listEl.scrollTop = listEl.scrollHeight), 30);
   });
-
-  // - Mock data-aware responses (demo mode only) ------------------------------
-  function respond(q: string): string {
-    const t = q.toLowerCase();
-    const all = [
-      ...dataStore.epics,
-      ...dataStore.stories,
-      ...dataStore.subtasks,
-    ];
-
-    if (t.includes("epic")) {
-      const names = dataStore.epics
-        .map((e) => `**${e.id}** ${e.title}`)
-        .join("\n");
-      return `There are **${dataStore.epics.length} epics** in this sprint:\n${names}`;
-    }
-    if (t.includes("in progress")) {
-      const items = all.filter((i) => i.status === "In Progress");
-      return (
-        `**${items.length} issues** are in progress:\n` +
-        items.map((i) => `• ${i.id} — ${i.title}`).join("\n")
-      );
-    }
-    if (t.includes("done") || t.includes("complet")) {
-      const items = all.filter((i) => i.status === "Done");
-      return (
-        `**${items.length} issues** are done:\n` +
-        items.map((i) => `• ${i.id} — ${i.title}`).join("\n")
-      );
-    }
-    if (t.includes("to do") || t.includes("todo") || t.includes("not start")) {
-      const items = all.filter((i) => i.status === "To Do");
-      return (
-        `**${items.length} issues** haven't started yet:\n` +
-        items.map((i) => `• ${i.id} — ${i.title}`).join("\n")
-      );
-    }
-    if (t.includes("assign") || t.includes("who")) {
-      const byPerson = {};
-      all.forEach((i) => {
-        (byPerson[i.assignee] ??= []).push(i);
-      });
-      return Object.entries(byPerson)
-        .map(
-          ([name, items]) =>
-            `**${name}** — ${items.length} issue${items.length > 1 ? "s" : ""} (${items.reduce((s, i) => s + i.points, 0)} pts)`,
-        )
-        .join("\n");
-    }
-    if (t.includes("point") || t.includes("estimate")) {
-      const total = all.reduce((s, i) => s + i.points, 0);
-      const done = all
-        .filter((i) => i.status === "Done")
-        .reduce((s, i) => s + i.points, 0);
-      return (
-        `**${done} of ${total} story points** completed (${Math.round((done / total) * 100)}%).\n` +
-        dataStore.epics
-          .map((e) => {
-            const related = all.filter(
-              (i) =>
-                i.id === e.id ||
-                i.epicId === e.id ||
-                (i.storyId &&
-                  dataStore.stories.find((s) => s.id === i.storyId)?.epicId ===
-                    e.id),
-            );
-            return `• ${e.title}: ${related.reduce((s, i) => s + i.points, 0)} pts`;
-          })
-          .join("\n")
-      );
-    }
-    if (
-      t.includes("summar") ||
-      t.includes("overview") ||
-      t.includes("status")
-    ) {
-      const byStatus = { Done: 0, "In Progress": 0, "To Do": 0 };
-      all.forEach((i) => byStatus[i.status]++);
-      return (
-        `**Sprint overview** — ${all.length} issues total:\n` +
-        `• ✅ Done: ${byStatus["Done"]}\n` +
-        `• 🔵 In Progress: ${byStatus["In Progress"]}\n` +
-        `• ⬜ To Do: ${byStatus["To Do"]}`
-      );
-    }
-    if (t.includes("stor")) {
-      return (
-        `There are **${dataStore.stories.length} stories** across ${dataStore.epics.length} epics:\n` +
-        dataStore.stories
-          .map((s) => `• ${s.id} — ${s.title} (${s.status})`)
-          .join("\n")
-      );
-    }
-    if (t.includes("sub") || t.includes("task")) {
-      return (
-        `There are **${dataStore.subtasks.length} sub-tasks** in the sprint:\n` +
-        dataStore.subtasks
-          .map((s) => `• ${s.id} — ${s.title} (${s.status})`)
-          .join("\n")
-      );
-    }
-    return `I can help with sprint data. Try:\n• "Show in progress issues"\n• "Who is assigned what?"\n• "How many story points remain?"\n• "Give me an overview"`;
-  }
 
   // - Send --------------------------------------------------------------------
   async function send(): Promise<void> {
@@ -149,13 +44,7 @@
     query = "";
     loading = true;
 
-    if (!liveMode) {
-      // ── Demo path: local mock ────────────────────────────────────────────
-      await new Promise((r) => setTimeout(r, 480));
-      messages = [...messages, { role: "assistant", text: respond(text) }];
-    } else {
-      // ── Live path: AtlasMind API ─────────────────────────────────────────
-      const t0 = Date.now();
+    const t0 = Date.now();
       const requestId = crypto.randomUUID();
       activeRequestId = requestId;
       try {
@@ -207,7 +96,6 @@
       } finally {
         activeRequestId = null;
       }
-    }
 
     loading = false;
   }
@@ -286,30 +174,18 @@
         </svg>
         AI Assistant
       </div>
-      {#if liveMode && authStore.isAuthenticated}
+      {#if authStore.isAuthenticated}
         <button class="pat-clear" onclick={() => authStore.clear()} title="Disconnect Jira token">
           ✕ Token
         </button>
       {/if}
-      <button
-        class="mode-toggle"
-        class:live={liveMode && chartStore.backendAlive}
-        class:live-offline={liveMode && !chartStore.backendAlive}
-        onclick={() => { liveMode = !liveMode; if (liveMode) chartStore.pollMeta(); }}
-        title={liveMode
-          ? "Switch to Demo mode"
-          : "Switch to Live mode (requires backend)"}
-      >
-        {#if liveMode}
-          <span class="mode-dot" class:offline={!chartStore.backendAlive}></span>Live
-        {:else}
-          Demo
-        {/if}
-      </button>
+      <span class="live-indicator" class:offline={!chartStore.backendAlive} onclick={() => chartStore.pollMeta()}>
+        <span class="live-dot" class:offline={!chartStore.backendAlive}></span>Live
+      </span>
     </div>
 
-    <!-- PAT prompt - shown only in live mode when no token is stored -->
-    {#if liveMode && !authStore.isAuthenticated}
+    <!-- PAT prompt - shown when no token is stored -->
+    {#if !authStore.isAuthenticated}
       <PatPrompt />
     {/if}
 
@@ -470,9 +346,7 @@
     border-color: rgba(248, 113, 113, 0.3);
   }
 
-  .mode-toggle {
-    all: unset;
-    cursor: pointer;
+  .live-indicator {
     display: flex;
     align-items: center;
     gap: 4px;
@@ -481,29 +355,20 @@
     letter-spacing: 0.05em;
     padding: 2px 8px;
     border-radius: 999px;
-    border: 1px solid #1e293b;
-    color: #475569;
-    background: #0f1e32;
-    transition:
-      color 0.15s,
-      border-color 0.15s,
-      background 0.15s;
-    margin-left: auto;
-  }
-
-  .mode-toggle.live {
+    border: 1px solid rgba(34, 197, 94, 0.3);
     color: #22c55e;
-    border-color: rgba(34, 197, 94, 0.3);
     background: rgba(34, 197, 94, 0.07);
+    margin-left: auto;
+    cursor: pointer;
   }
 
-  .mode-toggle.live-offline {
+  .live-indicator.offline {
     color: #475569;
     border-color: rgba(71, 85, 105, 0.3);
     background: rgba(71, 85, 105, 0.07);
   }
 
-  .mode-dot {
+  .live-dot {
     width: 5px;
     height: 5px;
     border-radius: 50%;
@@ -511,20 +376,15 @@
     animation: pulse-dot 2s ease-in-out infinite;
   }
 
-  .mode-dot.offline {
+  .live-dot.offline {
     background: #475569;
     animation: none;
     opacity: 0.6;
   }
 
   @keyframes pulse-dot {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.4;
-    }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
   }
 
   /* ── Messages ────────────────────────────────────────────────────────────── */
