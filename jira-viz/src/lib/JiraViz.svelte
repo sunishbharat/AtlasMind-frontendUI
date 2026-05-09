@@ -260,9 +260,6 @@
        ROW 2 — Data Input  (user-editable: load / swap data)
   ═════════════════════════════════════════════════════════════════════════ -->
   <div class="hrow hrow-data">
-    <span class="row-label">Data</span>
-    <div class="row-sep"></div>
-
     <div class="data-right">
       <div class="data-row">
         <span class="model-badge" class:offline={!chartStore.backendAlive}>
@@ -502,7 +499,6 @@
 
       <!-- Detail panel -->
       <div class="detail-panel">
-        <span class="detail-title">Data</span>
         <div class="dp-content">
           {#if vizState.hoveredId}
             {@const issue = dataStore.allIssues[vizState.hoveredId]}
