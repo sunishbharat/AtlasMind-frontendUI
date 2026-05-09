@@ -1328,7 +1328,8 @@
       <p class="cv-empty-hint">Ask a question in the AI chat — charts and table will appear here automatically.</p>
     </div>
   {/if}
-</div>
+
+  </div>
 
 <style>
   /* ── Shell ───────────────────────────────────────────────────────────────── */
@@ -2074,4 +2075,5 @@
     padding: 1px 4px;
     flex-shrink: 0;
   }
-</style>
+
+  </style>

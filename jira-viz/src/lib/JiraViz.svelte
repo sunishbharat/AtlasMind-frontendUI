@@ -12,7 +12,6 @@
   import { vizState } from "./state.svelte.js";
   import { ChartView, chartStore } from "./charts/index.js";
 
-  
   interface ViewDef {
     id: string;
     label: string;
@@ -51,24 +50,80 @@
 
   // - View state --------------------------------------------------------------
   let chatOpen = $state(true); // Open by default in Ask AI
-  let mainView = $state<'dashboard' | 'chart'>('dashboard');
+  let mainView = $state<"dashboard" | "chart">("dashboard");
   let hasChartData = $state(false); // Track if chart data was ever captured
+
+  // - Query toggle state -------------------------------------------------------
+  let queryOpen = $state(false);
+
+  function toggleQueryPanel(): void {
+    queryOpen = !queryOpen;
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(QUERY_TOGGLE_KEY, String(queryOpen));
+    }
+  }
+
+  // - Query syntax highlighting ------------------------------------------------
+  const QUERY_KEYWORDS = [
+    "SELECT",
+    "FROM",
+    "WHERE",
+    "IN",
+    "AND",
+    "OR",
+    "NOT",
+    "IS",
+    "EMPTY",
+    "ORDER",
+    "BY",
+    "LIMIT",
+    "GROUP",
+    "HAVING",
+    "ASC",
+    "DESC",
+    "JOIN",
+    "ON",
+    "AS",
+    "DISTINCT",
+    "COUNT",
+    "SUM",
+    "AVG",
+    "MAX",
+    "MIN",
+  ];
+  function highlightQuery(q: string): string {
+    if (!q) return "";
+    // Don't escape & or < - JQL from backend already has proper encoding
+    let out = q;
+    QUERY_KEYWORDS.forEach((kw) => {
+      out = out.replace(
+        new RegExp(`\\b${kw}\\b`, "gi"),
+        `<span class="query-kw">${kw}</span>`,
+      );
+    });
+    out = out.replace(/'([^']*)'/g, `<span class="query-val">'$1'</span>`);
+    out = out.replace(
+      /(&gt;=|&lt;=|&lt;&gt;|&gt;|&lt;|!=|=)/g,
+      '<span class="query-op">$1</span>',
+    );
+    return out;
+  }
 
   // Sync mainView with chartStore
   $effect(() => {
-    if (chartStore.hasData && mainView === 'dashboard') {
-      mainView = 'chart';
+    if (chartStore.hasData && mainView === "dashboard") {
+      mainView = "chart";
       hasChartData = true;
     }
   });
 
   function switchToChart() {
-    mainView = 'chart';
+    mainView = "chart";
   }
 
   function switchToDashboard() {
     // Just switch view, don't clear chart data so we can toggle back
-    mainView = 'dashboard';
+    mainView = "dashboard";
   }
   let aboutOpen = $state(false);
   let selectedIds = $state(new Set<string>(["hierarchy"]));
@@ -211,112 +266,113 @@
     <div class="data-right">
       <div class="data-row">
         <span class="model-badge" class:offline={!chartStore.backendAlive}>
-          <span class="model-dot" class:offline={!chartStore.backendAlive}></span>
+          <span class="model-dot" class:offline={!chartStore.backendAlive}
+          ></span>
           {chartStore.lastMeta?.model_name ?? "Connecting..."}
         </span>
         <div class="row-sep"></div>
         <div class="data-controls">
           <div class="data-source">
-          {#if dataStore.csvFilename}
-            <span class="ds-dot ds-dot--file"></span>
-            <svg width="11" height="11" viewBox="0 0 12 12"
-              ><path
-                d="M2 1h5l3 3v7H2V1z"
-                stroke="currentColor"
-                stroke-width="1.2"
-                fill="none"
-                stroke-linejoin="round"
-              /><path
-                d="M7 1v3h3"
-                stroke="currentColor"
-                stroke-width="1.2"
-                fill="none"
-              /></svg
-            >
-            <span class="ds-name">{dataStore.csvFilename}</span>
-            <button
-              class="ds-clear"
-              onclick={() => dataStore.resetToSample()}
-              title="Reset to sample data"
-            >
-              <svg width="9" height="9" viewBox="0 0 9 9"
+            {#if dataStore.csvFilename}
+              <span class="ds-dot ds-dot--file"></span>
+              <svg width="11" height="11" viewBox="0 0 12 12"
                 ><path
-                  d="M1.5 1.5l6 6M7.5 1.5l-6 6"
+                  d="M2 1h5l3 3v7H2V1z"
                   stroke="currentColor"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
+                  stroke-width="1.2"
+                  fill="none"
+                  stroke-linejoin="round"
+                /><path
+                  d="M7 1v3h3"
+                  stroke="currentColor"
+                  stroke-width="1.2"
+                  fill="none"
                 /></svg
               >
-            </button>
-          {:else}
-            <span class="ds-dot ds-dot--sample"></span>
-            <span class="ds-name ds-name--sample">Sample data</span>
-          {/if}
+              <span class="ds-name">{dataStore.csvFilename}</span>
+              <button
+                class="ds-clear"
+                onclick={() => dataStore.resetToSample()}
+                title="Reset to sample data"
+              >
+                <svg width="9" height="9" viewBox="0 0 9 9"
+                  ><path
+                    d="M1.5 1.5l6 6M7.5 1.5l-6 6"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                  /></svg
+                >
+              </button>
+            {:else}
+              <span class="ds-dot ds-dot--sample"></span>
+              <span class="ds-name ds-name--sample">Sample data</span>
+            {/if}
           </div>
 
           <div class="row-sep"></div>
 
           <button
             class="upload-btn"
-          onclick={() => fileInput.click()}
-          disabled={uploading}
-        >
-          {#if uploading}
-            <span class="spinner"></span>
-            Parsing…
-          {:else}
+            onclick={() => fileInput.click()}
+            disabled={uploading}
+          >
+            {#if uploading}
+              <span class="spinner"></span>
+              Parsing…
+            {:else}
+              <svg width="12" height="12" viewBox="0 0 12 12"
+                ><path
+                  d="M6 8V2M3 5l3-3 3 3"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  fill="none"
+                  stroke-linecap="round"
+                /><path
+                  d="M1 9v1a1 1 0 001 1h8a1 1 0 001-1V9"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  fill="none"
+                  stroke-linecap="round"
+                /></svg
+              >
+              Upload CSV
+            {/if}
+          </button>
+
+          <input
+            bind:this={fileInput}
+            type="file"
+            accept=".csv"
+            style="display:none"
+            onchange={onFileChange}
+          />
+        </div>
+
+        {#if dataStore.csvError}
+          <div class="data-error">
             <svg width="12" height="12" viewBox="0 0 12 12"
-              ><path
-                d="M6 8V2M3 5l3-3 3 3"
-                stroke="currentColor"
-                stroke-width="1.5"
+              ><circle
+                cx="6"
+                cy="6"
+                r="5"
+                stroke="#f87171"
+                stroke-width="1.2"
                 fill="none"
-                stroke-linecap="round"
               /><path
-                d="M1 9v1a1 1 0 001 1h8a1 1 0 001-1V9"
-                stroke="currentColor"
-                stroke-width="1.5"
-                fill="none"
+                d="M6 3.5v3M6 8v.5"
+                stroke="#f87171"
+                stroke-width="1.2"
                 stroke-linecap="round"
               /></svg
             >
-            Upload CSV
-          {/if}
-        </button>
-
-        <input
-          bind:this={fileInput}
-          type="file"
-          accept=".csv"
-          style="display:none"
-          onchange={onFileChange}
-        />
-      </div>
-
-      {#if dataStore.csvError}
-        <div class="data-error">
-          <svg width="12" height="12" viewBox="0 0 12 12"
-            ><circle
-              cx="6"
-              cy="6"
-              r="5"
-              stroke="#f87171"
-              stroke-width="1.2"
-              fill="none"
-            /><path
-              d="M6 3.5v3M6 8v.5"
-              stroke="#f87171"
-              stroke-width="1.2"
-              stroke-linecap="round"
-            /></svg
-          >
-          <span>{dataStore.csvError}</span>
-          <button
-            class="error-close"
-            onclick={() => (dataStore.csvError = null)}>×</button
-          >
-        </div>
-      {/if}
+            <span>{dataStore.csvError}</span>
+            <button
+              class="error-close"
+              onclick={() => (dataStore.csvError = null)}>×</button
+            >
+          </div>
+        {/if}
       </div>
     </div>
   </div>
@@ -385,18 +441,20 @@
     <div class="content-col">
       <!-- Always show header with toggle -->
       <div class="content-header">
-        <span class="content-title">{mainView === 'chart' ? 'AI Chart Result' : 'Dashboard View'}</span>
+        <span class="content-title"
+          >{mainView === "chart" ? "AI Chart Result" : "Dashboard View"}</span
+        >
         <div
           class="ai-chart-toggle"
           role="switch"
-          aria-checked={mainView === 'chart'}
+          aria-checked={mainView === "chart"}
         >
           <button
             type="button"
             class="ai-toggle-label"
-            class:active={mainView === 'dashboard'}
+            class:active={mainView === "dashboard"}
             onclick={switchToDashboard}
-            disabled={mainView === 'dashboard'}
+            disabled={mainView === "dashboard"}
           >
             <i class="ti ti-layout-dashboard icon"></i>
             Dashboard
@@ -405,9 +463,9 @@
           <button
             type="button"
             class="ai-toggle-label"
-            class:active={mainView === 'chart'}
-            onclick={() => chartStore.hasData && (mainView = 'chart')}
-            disabled={!hasChartData || mainView === 'chart'}
+            class:active={mainView === "chart"}
+            onclick={() => chartStore.hasData && (mainView = "chart")}
+            disabled={!hasChartData || mainView === "chart"}
           >
             <i class="ti ti-sparkles icon"></i>
             AI Chart
@@ -415,20 +473,28 @@
           </button>
           <div
             class="ai-toggle-slider"
-            class:dashboard={mainView === 'dashboard'}
-            class:ai-chart={mainView === 'chart'}
+            class:dashboard={mainView === "dashboard"}
+            class:ai-chart={mainView === "chart"}
             style="left:{mainView === 'chart' ? '50%' : '0'}"
           ></div>
         </div>
       </div>
 
       {#key mainView}
-        {#if mainView === 'chart'}
-          <div class="ai-chart-view" in:scale={{ duration: 250, start: 0.96, easing: quintOut }} out:fade={{ duration: 150 }}>
+        {#if mainView === "chart"}
+          <div
+            class="ai-chart-view"
+            in:scale={{ duration: 250, start: 0.96, easing: quintOut }}
+            out:fade={{ duration: 150 }}
+          >
             <ChartView />
           </div>
         {:else}
-          <div class="dashboard-view" in:scale={{ duration: 250, start: 0.96, easing: quintOut }} out:fade={{ duration: 150 }}>
+          <div
+            class="dashboard-view"
+            in:scale={{ duration: 250, start: 0.96, easing: quintOut }}
+            out:fade={{ duration: 150 }}
+          >
             <DashboardV2 />
           </div>
         {/if}
@@ -460,28 +526,38 @@
                   >{/if}
               </div>
             </div>
-          {:else if chartStore.data?.jql}
-            <div class="dp-jql">
-              <span class="dp-jql-label">JQL</span>
-              <code class="dp-jql-code" title={chartStore.data.jql}
-                >{chartStore.data.jql}</code
-              >
-              {#if chartStore.data.jira_base_url}
-                <a
-                  class="dp-jql-link"
-                  href="{chartStore.data
-                    .jira_base_url}/issues/?jql={encodeURIComponent(
-                    chartStore.data.jql,
-                  )}"
-                  target="_blank"
-                  rel="noopener"
-                  title="Open in Jira">↗</a
-                >
-              {/if}
-            </div>
-          {:else}
-            <span class="dp-hint">Hover a card to explore connections</span>
           {/if}
+
+          <!-- Build date - visible in both views -->
+          <div class="dp-query-row">
+            <span class="dp-build-date">Built {new Date(__BUILD_TIME__).toLocaleString()}</span>
+            {#if mainView === "chart" && chartStore.data?.jql}
+              {#if queryOpen}
+                <span class="dp-query-label">JQL:</span>
+                <code class="dp-query-code">{chartStore.data.jql}</code>
+              {/if}
+              <button
+                class="dp-query-toggle"
+                class:active={queryOpen}
+                onclick={toggleQueryPanel}
+                aria-label="Toggle query"
+                aria-expanded={queryOpen}
+                title={chartStore.data.jql}
+              >
+                <span class="dp-query-dot"></span>
+                {queryOpen ? "query ×" : "query"}
+              </button>
+            {/if}
+          </div>
+          {#if mainView === "chart" && chartStore.data?.jql}
+            <div
+              class="dp-query-panel"
+              class:open={queryOpen}
+              aria-hidden={!queryOpen}
+            >
+              <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+            </div>
+          {:else}{/if}
         </div>
       </div>
     </div>
@@ -502,7 +578,7 @@
     height: 100svh;
     background: #0c1220;
     color: #e2e8f0;
-    font-family: 'Inter', system-ui, 'Segoe UI', sans-serif;
+    font-family: "Inter", system-ui, "Segoe UI", sans-serif;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -628,10 +704,18 @@
     font-size: 12px;
     cursor: pointer;
     border-radius: 4px;
-    transition: background 0.15s, color 0.15s;
+    transition:
+      background 0.15s,
+      color 0.15s;
   }
-  .nav-tab:hover { background: #21262d; color: #e6edf3; }
-  .nav-tab.active { background: #1f6feb; color: white; }
+  .nav-tab:hover {
+    background: #21262d;
+    color: #e6edf3;
+  }
+  .nav-tab.active {
+    background: #1f6feb;
+    color: white;
+  }
 
   .logo {
     display: flex;
@@ -704,14 +788,7 @@
   }
 
   .build-badge {
-    position: fixed;
-    bottom: 8px;
-    left: 12px;
-    font-size: 9.5px;
-    color: #4e6884;
-    letter-spacing: 0.02em;
-    pointer-events: none;
-    z-index: 10;
+    display: none; /* Moved to query row */
   }
 
   .brand-progress {
@@ -1000,7 +1077,7 @@
     align-items: center;
     gap: 5px;
     font-size: 10.5px;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: "Inter", system-ui, sans-serif;
     font-weight: 500;
     color: #22c55e;
     background: rgba(34, 197, 94, 0.07);
@@ -1143,12 +1220,16 @@
 
   .ai-chart-toggle[aria-checked="true"] {
     border-color: rgba(124, 58, 237, 0.3);
-    box-shadow: inset -4px 0 0 rgba(124, 58, 237, 0.3), inset 0 2px 4px rgba(0, 0, 0, 0.4);
+    box-shadow:
+      inset -4px 0 0 rgba(124, 58, 237, 0.3),
+      inset 0 2px 4px rgba(0, 0, 0, 0.4);
   }
 
   .ai-chart-toggle[aria-checked="false"] {
     border-color: rgba(42, 92, 173, 0.3);
-    box-shadow: inset -4px 0 0 rgba(42, 92, 173, 0.3), inset 0 2px 4px rgba(0, 0, 0, 0.4);
+    box-shadow:
+      inset -4px 0 0 rgba(42, 92, 173, 0.3),
+      inset 0 2px 4px rgba(0, 0, 0, 0.4);
   }
 
   .ai-toggle-slider {
@@ -1164,11 +1245,15 @@
   }
   .ai-toggle-slider.dashboard {
     background: linear-gradient(135deg, #1a3a6e 0%, #2a5cad 100%);
-    box-shadow: 0 4px 12px rgba(42, 92, 173, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+    box-shadow:
+      0 4px 12px rgba(42, 92, 173, 0.4),
+      inset 0 1px 1px rgba(255, 255, 255, 0.15);
   }
   .ai-toggle-slider.ai-chart {
     background: linear-gradient(135deg, #3a1a6e 0%, #7c3aed 100%);
-    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+    box-shadow:
+      0 4px 12px rgba(124, 58, 237, 0.45),
+      inset 0 1px 1px rgba(255, 255, 255, 0.15);
   }
 
   .ai-toggle-label {
@@ -1316,7 +1401,7 @@
     font-weight: 700;
     letter-spacing: 0.06em;
     color: #5a7a99;
-    font-family: 'Consolas', monospace;
+    font-family: "Consolas", monospace;
   }
   .dp-title {
     font-size: 13px;
@@ -1343,12 +1428,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-  }
-
-  .dp-hint {
-    font-size: 11px;
-    color: #4e6884;
-    font-style: italic;
   }
 
   .dp-jql {
@@ -1384,5 +1463,127 @@
   }
   .dp-jql-link:hover {
     text-decoration: underline;
+  }
+
+  .dp-query-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: 12px;
+  }
+
+  .dp-build-date {
+    font-size: 9px;
+    color: #4e6884;
+    flex-shrink: 0;
+  }
+
+  .dp-jql-tag {
+    font-family: "Consolas", monospace;
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.25);
+    flex-shrink: 0;
+  }
+
+  .dp-jql-preview {
+    flex: 1;
+    font-family: "Consolas", monospace;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.4);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    cursor: default;
+  }
+
+  .dp-query-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 18px;
+    padding: 0 6px;
+    margin-left: auto;
+    background: transparent;
+    border: 0.5px solid rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.35);
+    cursor: pointer;
+    transition:
+      border-color 0.15s,
+      color 0.15s,
+      background 0.15s;
+    flex-shrink: 0;
+  }
+
+  .dp-query-toggle:hover {
+    border-color: rgba(255, 255, 255, 0.28);
+    color: rgba(255, 255, 255, 0.65);
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .dp-query-toggle.active {
+    border-color: rgba(120, 170, 220, 0.4);
+    color: #7aaad8;
+    background: rgba(55, 138, 221, 0.08);
+  }
+
+  .dp-query-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    transition: background 0.15s;
+  }
+
+  .dp-query-toggle.active .dp-query-dot {
+    background: #7aaad8;
+  }
+
+  .dp-query-panel {
+    max-height: 0;
+    overflow: hidden;
+    padding: 0 12px;
+    background: #070d16;
+    border-top: 0.5px solid transparent;
+    transition:
+      max-height 0.2s ease,
+      padding 0.2s ease,
+      border-color 0.2s ease;
+  }
+
+  .dp-query-panel.open {
+    max-height: 60px;
+    padding: 6px 12px 8px;
+    border-top-color: rgba(255, 255, 255, 0.06);
+  }
+
+  .dp-query-label {
+    font-family: "Consolas", monospace;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    flex-shrink: 0;
+  }
+
+  .dp-query-code {
+    font-family: "Consolas", monospace;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    line-height: 1.6;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  :global(.query-kw) {
+    color: #7ca9e0;
+  }
+  :global(.query-val) {
+    color: #e0a97c;
+  }
+  :global(.query-op) {
+    color: rgba(255, 255, 255, 0.3);
   }
 </style>
