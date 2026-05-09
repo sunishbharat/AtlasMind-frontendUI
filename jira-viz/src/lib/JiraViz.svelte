@@ -4,11 +4,13 @@
   import HierarchyView from "./views/HierarchyView.svelte";
   import TableView from "./views/TableView.svelte";
   import ChatPanel from "./ChatPanel.svelte";
+  import DashboardV2 from "./dashboard/DashboardV2.svelte";
   import { STATUS_STYLE } from "./data.js";
   import { dataStore } from "./dataStore.svelte.js";
   import { vizState } from "./state.svelte.js";
   import { ChartView, chartStore } from "./charts/index.js";
 
+  
   interface ViewDef {
     id: string;
     label: string;
@@ -46,7 +48,26 @@
   ];
 
   // - View state --------------------------------------------------------------
-  let chatOpen = $state(false);
+  let chatOpen = $state(true); // Open by default in Ask AI
+  let mainView = $state<'dashboard' | 'chart'>('dashboard');
+  let hasChartData = $state(false); // Track if chart data was ever captured
+
+  // Sync mainView with chartStore
+  $effect(() => {
+    if (chartStore.hasData && mainView === 'dashboard') {
+      mainView = 'chart';
+      hasChartData = true;
+    }
+  });
+
+  function switchToChart() {
+    mainView = 'chart';
+  }
+
+  function switchToDashboard() {
+    // Just switch view, don't clear chart data so we can toggle back
+    mainView = 'dashboard';
+  }
   let aboutOpen = $state(false);
   let selectedIds = $state(new Set<string>(["hierarchy"]));
 
@@ -130,6 +151,10 @@
         <span class="brand-sprint">Insight Engine</span>
         <span class="brand-sub">From data to decisions</span>
       </div>
+    </div>
+
+    <div class="nav-tabs">
+      <span class="nav-label">Ask AI</span>
     </div>
 
     <div class="brand-stats">
@@ -345,43 +370,60 @@
     </div>
   </div>
 
-  <!-- ── Main content area (views + chat panel side by side) ───────────── -->
+  <!-- ── Main content area (dashboard + chat panel side by side) ───────────── -->
   <div class="main-area">
-    <!-- Left: visualisation column -->
+    <!-- Left: dashboard or chart column -->
     <div class="content-col">
-      <div class="views-grid" style="--cols:{activeViews.length}">
-        {#each activeViews as view (view.id)}
-          {@const Component = view.component}
-          <div class="view-pane" class:multi={activeViews.length > 1}>
-            {#if activeViews.length > 1}
-              <div class="pane-bar">
-                <span class="pane-icon">{view.icon}</span>
-                <span class="pane-label">{view.label}</span>
-                <button
-                  class="pane-close"
-                  onclick={() => removeView(view.id)}
-                  aria-label="Close {view.label}"
-                >
-                  <svg width="9" height="9" viewBox="0 0 10 10"
-                    ><path
-                      d="M2 2l6 6M8 2l-6 6"
-                      stroke="currentColor"
-                      stroke-width="1.5"
-                      stroke-linecap="round"
-                    /></svg
-                  >
-                </button>
-              </div>
-            {/if}
-            <div class="pane-content">
-              <Component />
-            </div>
-          </div>
-        {/each}
+      <!-- Always show header with toggle -->
+      <div class="content-header">
+        <span class="content-title">{mainView === 'chart' ? 'AI Chart Result' : 'Dashboard View'}</span>
+        <div
+          class="ai-chart-toggle"
+          role="switch"
+          aria-checked={mainView === 'chart'}
+        >
+          <button
+            type="button"
+            class="ai-toggle-label"
+            class:active={mainView === 'dashboard'}
+            onclick={switchToDashboard}
+            disabled={mainView === 'dashboard'}
+          >
+            <i class="ti ti-layout-dashboard icon"></i>
+            Dashboard
+            <span class="dot"></span>
+          </button>
+          <button
+            type="button"
+            class="ai-toggle-label"
+            class:active={mainView === 'chart'}
+            onclick={() => chartStore.hasData && (mainView = 'chart')}
+            disabled={!hasChartData || mainView === 'chart'}
+          >
+            <i class="ti ti-sparkles icon"></i>
+            AI Chart
+            <span class="dot"></span>
+          </button>
+          <div
+            class="ai-toggle-slider"
+            class:dashboard={mainView === 'dashboard'}
+            class:ai-chart={mainView === 'chart'}
+            style="left:{mainView === 'chart' ? '50%' : '0'}"
+          ></div>
+        </div>
       </div>
+
+      {#if mainView === 'chart'}
+        <div class="ai-chart-view">
+          <ChartView />
+        </div>
+      {:else}
+        <DashboardV2 />
+      {/if}
 
       <!-- Detail panel -->
       <div class="detail-panel">
+        <span class="detail-title">Data</span>
         <div class="dp-content">
           {#if vizState.hoveredId}
             {@const issue = dataStore.allIssues[vizState.hoveredId]}
@@ -547,6 +589,36 @@
     align-items: center;
     gap: 12px;
   }
+
+  .nav-tabs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 16px;
+    pointer-events: auto;
+  }
+
+  .nav-label {
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    color: white;
+    background: #1f6feb;
+    border-radius: 4px;
+  }
+
+  .nav-tab {
+    padding: 5px 12px;
+    border: none;
+    background: transparent;
+    color: #8b949e;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.15s, color 0.15s;
+  }
+  .nav-tab:hover { background: #21262d; color: #e6edf3; }
+  .nav-tab.active { background: #1f6feb; color: white; }
 
   .logo {
     display: flex;
@@ -839,6 +911,7 @@
 
   /* ── Row 3: Controls / Dropdowns ────────────────────────────────────────── */
   .hrow-controls {
+    display: none; /* DashboardV2 has its own nav tabs */
     background: #0c1220;
     padding-top: 8px;
     padding-bottom: 8px;
@@ -994,6 +1067,122 @@
     overflow: hidden;
   }
 
+  .ai-chart-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .content-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: linear-gradient(180deg, #0f1623 0%, #0c1220 100%);
+    border-bottom: 1px solid rgba(99, 110, 180, 0.15);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  .content-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: #6a8ac4;
+    letter-spacing: 0.3px;
+  }
+
+  .ai-chart-title {
+    font-size: 12px;
+    font-weight: 500;
+    color: #e6edf3;
+  }
+
+  .ai-chart-toggle {
+    display: flex;
+    position: relative;
+    width: 182px;
+    height: 31px;
+    background: #0f1623;
+    border: 1px solid #1e2d4a;
+    border-radius: 999px;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+  }
+  .ai-chart-toggle:hover {
+    border-color: #2e4a7a;
+  }
+
+  .ai-chart-toggle[aria-checked="true"] {
+    border-color: rgba(124, 58, 237, 0.3);
+    box-shadow: inset -4px 0 0 rgba(124, 58, 237, 0.3), inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  }
+
+  .ai-chart-toggle[aria-checked="false"] {
+    border-color: rgba(42, 92, 173, 0.3);
+    box-shadow: inset -4px 0 0 rgba(42, 92, 173, 0.3), inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  }
+
+  .ai-toggle-slider {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: calc(50% - 2px);
+    height: 27px;
+    border-radius: 999px;
+    pointer-events: none;
+    transition: left 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    z-index: 1;
+  }
+  .ai-toggle-slider.dashboard {
+    background: linear-gradient(135deg, #1a3a6e 0%, #2a5cad 100%);
+    box-shadow: 0 4px 12px rgba(42, 92, 173, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+  }
+  .ai-toggle-slider.ai-chart {
+    background: linear-gradient(135deg, #3a1a6e 0%, #7c3aed 100%);
+    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+  }
+
+  .ai-toggle-label {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 500;
+    color: #4a6a9a;
+    cursor: pointer;
+    z-index: 2;
+    transition: color 0.2s ease;
+    background: transparent;
+    border: none;
+  }
+  .ai-toggle-label:hover {
+    color: #6a8ac4;
+  }
+  .ai-toggle-label.active {
+    color: #e6edf3;
+  }
+  .ai-toggle-label:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+  .ai-toggle-label .icon {
+    font-size: 11px;
+  }
+  .ai-toggle-label .dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  .ai-toggle-label.active .dot {
+    opacity: 1;
+  }
+
   /* ══════════════════════════════════════════════════════════════════════════
      VIEWS GRID
   ══════════════════════════════════════════════════════════════════════════ */
@@ -1073,11 +1262,19 @@
   .detail-panel {
     border-top: 1px solid #1a2540;
     background: #08111e;
-    padding: 11px 32px;
+    padding: 8px 16px;
     min-height: 52px;
     display: flex;
-    align-items: center;
+    flex-direction: column;
     flex-shrink: 0;
+  }
+
+  .detail-title {
+    font-size: 11px;
+    font-weight: 500;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
   }
 
   .dp-inner {

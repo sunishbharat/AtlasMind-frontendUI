@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { buildPie } from '../charts/specBuilder.js';
+  import ChartRenderer from '../charts/ChartRenderer.svelte';
+
   interface Props { onAskAI: () => void }
   let { onAskAI }: Props = $props();
 
@@ -81,10 +84,74 @@
     { ver: '3.8.0', released: false },
   ];
 
+  // -- Pie chart data ---------------------------------------------------------
+
+  interface PieSegment {
+    readonly label: string;
+    readonly value: number;
+    readonly color: string;
+  }
+
+  type PieDimension = 'project' | 'status' | 'type' | 'priority';
+
+  const PIE_DIMENSIONS: { value: PieDimension; label: string }[] = [
+    { value: 'project', label: 'By Project' },
+    { value: 'status',  label: 'By Status' },
+    { value: 'type',    label: 'By Issue Type' },
+    { value: 'priority',label: 'By Priority' },
+  ];
+
+  const PIE_DATA: Record<PieDimension, PieSegment[]> = {
+    project: [
+      { label: 'Kafka',     value: 92,  color: '#378ADD' },
+      { label: 'Zookeeper', value: 71,  color: '#1D9E75' },
+      { label: 'Hive',      value: 65,  color: '#EF9F27' },
+      { label: 'HDFS',      value: 56,  color: '#E24B4A' },
+    ],
+    status: [
+      { label: 'Open',      value: 124, color: '#378ADD' },
+      { label: 'In Progress',value: 89, color: '#EF9F27' },
+      { label: 'Resolved',  value: 58,  color: '#1D9E75' },
+      { label: 'Closed',    value: 13,  color: '#64748b' },
+    ],
+    type: [
+      { label: 'Bug',       value: 142, color: '#E24B4A' },
+      { label: 'Feature',  value: 78,  color: '#378ADD' },
+      { label: 'Improvement',value: 42, color: '#1D9E75' },
+      { label: 'Task',      value: 22,  color: '#EF9F27' },
+    ],
+    priority: [
+      { label: 'Critical', value: 34,  color: '#E24B4A' },
+      { label: 'High',     value: 89,  color: '#EF9F27' },
+      { label: 'Medium',   value: 112, color: '#378ADD' },
+      { label: 'Low',      value: 49,  color: '#64748b' },
+    ],
+  };
+
   // -- Reactive state ---------------------------------------------------------
 
   let toggledProjects = $state(new Set<string>(['kafka']));
   let spotlightKey    = $state('kafka');
+  let pieDimension    = $state<PieDimension>('project');
+
+  const pieSegments = $derived(PIE_DATA[pieDimension]);
+  const pieTotal    = $derived(pieSegments.reduce((sum, s) => sum + s.value, 0));
+
+  const pieOption = $derived(
+    (() => {
+      const opt = buildPie(
+        pieSegments.map(s => [s.label, s.value] as [string, number]),
+        'Overview',
+        10,
+        true
+      );
+      // Reduce width by 30% - scale down radius
+      if (opt.series?.[0]) {
+        opt.series[0].radius = ['40%', '75%'];
+      }
+      return opt;
+    })()
+  );
 
   const spotlight = $derived(
     PROJECTS.find(p => p.key === spotlightKey) ?? PROJECTS[0]
@@ -148,11 +215,31 @@
     <div class="section-label">Overview</div>
     <div class="kpi-row">
 
-      <div class="kpi-card">
-        <div class="kpi-icon kpi-info"><i class="ti ti-users" aria-hidden="true"></i></div>
-        <div class="kpi-label">Active contributors</div>
-        <div class="kpi-value">284</div>
-        <div class="kpi-delta up">↑ 12% vs prior period</div>
+      <!-- Pie chart card with dropdown -->
+      <div class="kpi-card kpi-pie-card">
+        <div class="kpi-pie-header">
+          <select class="pie-dim-select" bind:value={pieDimension}>
+            {#each PIE_DIMENSIONS as d (d.value)}
+              <option value={d.value}>{d.label}</option>
+            {/each}
+          </select>
+        </div>
+        <div class="kpi-pie-body">
+          <ChartRenderer option={pieOption} height="140px" />
+          <div class="pie-center">
+            <div class="pie-total">{pieTotal}</div>
+            <div class="pie-total-label">total</div>
+          </div>
+        </div>
+        <div class="pie-legend">
+          {#each pieSegments as seg (seg.label)}
+            <div class="pie-leg-item">
+              <span class="pie-dot" style="background:{seg.color}"></span>
+              <span class="pie-leg-label">{seg.label}</span>
+              <span class="pie-leg-val">{seg.value}</span>
+            </div>
+          {/each}
+        </div>
       </div>
 
       <div class="kpi-card">
@@ -562,7 +649,7 @@
   /* -- A: KPI row ------------------------------------------------------------ */
   .kpi-row {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 8px;
   }
 
@@ -801,4 +888,93 @@
   }
   .proj-select:hover  { border-color: var(--c-border-mid); color: var(--c-text); }
   .proj-select option { background: #131e31; color: #e2e8f0; }
+
+  /* Pie chart card - spans 2 columns */
+  .kpi-pie-card {
+    display: flex;
+    flex-direction: column;
+    padding: 10px 12px;
+    grid-column: span 2;
+  }
+  .kpi-pie-header {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 2px;
+  }
+  .pie-dim-select {
+    appearance: none;
+    background: var(--c-bg-raised);
+    border: 0.5px solid var(--c-border);
+    color: var(--c-muted);
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: var(--r-md);
+    cursor: pointer;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.14s;
+  }
+  .pie-dim-select:hover { border-color: var(--c-border-mid); color: var(--c-text); }
+  .pie-dim-select option { background: #131e31; color: #e2e8f0; }
+
+  .kpi-pie-body {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 200px;
+  }
+  .pie-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .pie-total {
+    font-size: 24px;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--c-text);
+  }
+  .pie-total-label {
+    font-size: 10px;
+    color: var(--c-sub);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+
+  .pie-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 6px;
+    font-size: 10px;
+  }
+  .pie-leg-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .pie-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .pie-leg-label {
+    color: var(--c-muted);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pie-leg-val {
+    color: var(--c-text);
+    font-weight: 500;
+  }
 </style>
