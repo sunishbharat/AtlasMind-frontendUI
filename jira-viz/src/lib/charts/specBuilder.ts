@@ -1132,38 +1132,215 @@ export function autoDetectGroupField(issues: ApiIssue[], excludeFields: string[]
   return candidates[0].field;
 }
 
-/** Single-series line chart over a categorical x-axis. */
-export function buildSingleLine(entries: [string, number][], title: string, animation = true): EChartsOption {
-  const color      = paletteColor(0);
-  const categories = entries.map(([k]) => k);
-
-  return {
-    ...BASE_OPTION,
-    animation,
-    tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis' },
-    title: { text: title, textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
-    xAxis: {
-      type: 'category', data: categories,
-      axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false },
-      axisLabel: { color: '#94a3b8', fontSize: 10, rotate: categories.length > 6 ? 30 : 0, interval: 0 },
-      splitLine: { show: false },
-    },
-    yAxis: {
-      type: 'value',
-      axisLine: { show: false }, axisTick: { show: false },
-      axisLabel: { color: '#94a3b8', fontSize: 10 },
-      splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
-      minInterval: 1,
-    },
-    series: [{
-      type: 'line',
-      data: entries.map(([, v]) => v),
-      smooth: true,
-      symbol: 'circle', symbolSize: 5,
-      lineStyle: { color, width: 2 },
-      itemStyle: { color },
-    }],
+/**
+ * LineChart class - reusable line chart builder using ECharts.
+ * Supports single-line and multi-line charts.
+ *
+ * Usage:
+ *   // Single line
+ *   const chart = new LineChart().setTitle('My Chart').setData(entries).build();
+ *
+ *   // Multi-line
+ *   const chart = new LineChart()
+ *     .setTitle('Multi-line')
+ *     .setMultiSeries([
+ *       { name: 'Series 1', data: entries1 },
+ *       { name: 'Series 2', data: entries2 }
+ *     ])
+ *     .build();
+ */
+export class LineChart {
+  private options: {
+    title?: string;
+    animation?: boolean;
+    entries?: [string, number][];
+    multiSeries?: { name: string; data: [string, number][] }[];
+    xAxisLabels?: string[];
+    seriesFromAggregate?: { name: string; data: (number | null)[] }[];
   };
+
+  constructor(options: {
+    title?: string;
+    animation?: boolean;
+    entries?: [string, number][];
+    multiSeries?: { name: string; data: [string, number][] }[];
+    xAxisLabels?: string[];
+    seriesFromAggregate?: { name: string; data: (number | null)[] }[];
+  } = {}) {
+    this.options = {
+      title: 'Line Chart',
+      animation: true,
+      ...options,
+    };
+  }
+
+  /** Set chart title */
+  setTitle(title: string): this {
+    this.options.title = title;
+    return this;
+  }
+
+  /** Set animation */
+  setAnimation(animation: boolean): this {
+    this.options.animation = animation;
+    return this;
+  }
+
+  /** Set single-series data */
+  setData(entries: [string, number][]): this {
+    this.options.entries = entries;
+    return this;
+  }
+
+  /** Set multi-series data */
+  setMultiSeries(series: { name: string; data: [string, number][] }[]): this {
+    this.options.multiSeries = series;
+    return this;
+  }
+
+  /** Set series from aggregate response (multi-line from backend) */
+  setSeriesFromAggregate(xAxisLabels: string[], series: { name: string; data: (number | null)[] }[]): this {
+    this.options.xAxisLabels = xAxisLabels;
+    this.options.seriesFromAggregate = series;
+    return this;
+  }
+
+  /** Build and return ECharts option */
+  build(): EChartsOption {
+    const { title, animation, entries, multiSeries, xAxisLabels, seriesFromAggregate } = this.options;
+
+    // Handle multi-series from aggregate response (backend data with color_field)
+    if (seriesFromAggregate && seriesFromAggregate.length > 0) {
+      const labels = xAxisLabels ?? [];
+      const axisLabel = { color: '#94a3b8', fontSize: 10, rotate: labels.length > 6 ? 30 : 0, interval: Math.max(0, Math.floor(labels.length / 8) - 1) };
+
+      const series = seriesFromAggregate.map((s, idx) => ({
+        name: s.name,
+        type: 'line' as const,
+        data: s.data,
+        smooth: true,
+        symbol: idx === 0 ? 'circle' : 'none',
+        symbolSize: 5,
+        lineStyle: { color: paletteColor(idx), width: 2 },
+        itemStyle: { color: paletteColor(idx) },
+      }));
+
+      return {
+        ...BASE_OPTION,
+        animation,
+        tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis' },
+        legend: { show: series.length > 1, top: 24, right: 6, textStyle: { color: '#94a3b8', fontSize: 10 }, icon: 'circle', itemWidth: 8, itemHeight: 8 },
+        title: { text: title, textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
+        xAxis: { type: 'category', data: labels, axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel, splitLine: { show: false } },
+        yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#94a3b8', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } }, minInterval: 1 },
+        series,
+        grid: { ...BASE_OPTION.grid as object, top: series.length > 1 ? 52 : 28 },
+      };
+    }
+
+    // Handle multi-series from explicit data
+    if (multiSeries && multiSeries.length > 0) {
+      const allLabels = new Set<string>();
+      multiSeries.forEach(s => s.data.forEach(([k]) => allLabels.add(k)));
+      const labels = Array.from(allLabels);
+
+      const series = multiSeries.map((s, idx) => {
+        const dataMap = new Map(s.data);
+        return {
+          name: s.name,
+          type: 'line' as const,
+          data: labels.map(l => dataMap.get(l) ?? 0),
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 5,
+          lineStyle: { color: paletteColor(idx), width: 2 },
+          itemStyle: { color: paletteColor(idx) },
+        };
+      });
+
+      return {
+        ...BASE_OPTION,
+        animation,
+        tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis' },
+        legend: { show: true, top: 24, right: 6, textStyle: { color: '#94a3b8', fontSize: 10 }, icon: 'circle', itemWidth: 8, itemHeight: 8 },
+        title: { text: title, textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
+        xAxis: { type: 'category', data: labels, axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel: { color: '#94a3b8', fontSize: 10, rotate: labels.length > 6 ? 30 : 0 }, splitLine: { show: false } },
+        yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#94a3b8', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } }, minInterval: 1 },
+        series,
+        grid: { ...BASE_OPTION.grid as object, top: 52 },
+      };
+    }
+
+    // Handle single-series - inline to avoid infinite recursion with buildSingleLine
+    const color = paletteColor(0);
+    const categories = entries?.map(([k]) => k) ?? [];
+
+    if (entries && entries.length > 0) {
+      return {
+        ...BASE_OPTION,
+        animation,
+        tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis' },
+        title: { text: title ?? 'Line Chart', textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
+        xAxis: {
+          type: 'category', data: categories,
+          axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false },
+          axisLabel: { color: '#94a3b8', fontSize: 10, rotate: categories.length > 6 ? 30 : 0, interval: 0 },
+          splitLine: { show: false },
+        },
+        yAxis: {
+          type: 'value',
+          axisLine: { show: false }, axisTick: { show: false },
+          axisLabel: { color: '#94a3b8', fontSize: 10 },
+          splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
+          minInterval: 1,
+        },
+        series: [{
+          type: 'line',
+          data: entries.map(([, v]) => v),
+          smooth: true,
+          symbol: 'circle', symbolSize: 5,
+          lineStyle: { color, width: 2 },
+          itemStyle: { color },
+        }],
+      };
+    }
+
+    // Empty chart
+    return {
+      ...BASE_OPTION,
+      animation,
+      tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis' },
+      title: { text: title ?? 'Line Chart', textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
+      xAxis: {
+        type: 'category', data: [],
+        axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false },
+        axisLabel: { color: '#94a3b8', fontSize: 10 },
+        splitLine: { show: false },
+      },
+      yAxis: {
+        type: 'value',
+        axisLine: { show: false }, axisTick: { show: false },
+        axisLabel: { color: '#94a3b8', fontSize: 10 },
+        splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
+        minInterval: 1,
+      },
+      series: [{
+        type: 'line',
+        data: [],
+        smooth: true,
+        symbol: 'circle', symbolSize: 5,
+        lineStyle: { color, width: 2 },
+        itemStyle: { color },
+      }],
+    };
+  }
+}
+
+/**
+ * Backward-compatible wrapper using the LineChart class.
+ */
+export function buildSingleLine(entries: [string, number][], title: string, animation = true): EChartsOption {
+  return new LineChart({ entries, title, animation }).build();
 }
 
 /**

@@ -143,20 +143,27 @@
         body: JSON.stringify({ query, pat: authStore.pat || undefined }),
       });
       const data = await res.json();
-      console.log('[Dashboard] query response:', data.output?.type, '| issues:', data.output?.issues?.length);
 
       if (data.output?.type === 'jql' && data.output.issues?.length) {
         const dim = dimensions[chartId] || 'status';
+        const chartType = getChartType(chartId);
+        const issues = data.output.issues;
+
+        // For line charts, add colorField to get multi-line (grouped by status)
+        const aggOptions = {
+          chartType,
+          xField: dim,
+        };
+        if (chartType === 'line') {
+          (aggOptions as any).colorField = 'status';
+        }
+
         const aggData = await aggregateIssues(
-          data.output.issues,
-          {
-            chartType: getChartType(chartId),
-            xField: dim,
-          },
+          issues,
+          aggOptions,
           authStore.pat || undefined
         );
 
-        console.log('[Dashboard] aggregate response:', aggData.chart_type, '| pie_data:', !!aggData.pie_data, '| series:', aggData.series?.length);
         dashboardStore.setResult(chartId, aggData, data.output.issues);
       } else {
         dashboardStore.setLoading(chartId, false);
@@ -180,14 +187,17 @@
   async function reAggregate(chartId: string, issues: ApiIssue[], dim: string): Promise<void> {
     dashboardStore.setLoading(chartId, true);
     try {
-      const aggData = await aggregateIssues(
-        issues,
-        {
-          chartType: getChartType(chartId),
-          xField: dim,
-        },
-        authStore.pat || undefined
-      );
+      const chartType = getChartType(chartId);
+      const aggOptions = {
+        chartType,
+        xField: dim,
+      };
+      // For line charts, add colorField to get multi-line (grouped by status)
+      if (chartType === 'line') {
+        (aggOptions as any).colorField = 'status';
+      }
+
+      const aggData = await aggregateIssues(issues, aggOptions, authStore.pat || undefined);
       dashboardStore.setResult(chartId, aggData, issues);
     } catch (err) {
       console.error('[Dashboard] re-aggregate failed:', err);

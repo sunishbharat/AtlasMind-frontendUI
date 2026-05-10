@@ -34,12 +34,21 @@ POINT_FIELDS = ("story_points", "points", "sp")
 LINE_ALIASES = {"line", "multi-line", "multiline", "multi_line"}
 COUNT_WORDS  = {"count", "count of issues", "number", "total"}
 
-_BUCKET_FREQ = {
+# Frequency mapping: to_period() uses period codes, pd.date_range() uses offset codes
+_BUCKET_FREQ_PERIOD = {
     "day":     "D",
     "week":    "W-MON",
     "month":   "ME",
-    "quarter": "QE-DEC",
-    "year":    "YE-DEC",
+    "quarter": "Q",
+    "year":    "Y-DEC",
+}
+
+_BUCKET_FREQ_OFFSET = {
+    "day":     "D",
+    "week":    "W-MON",
+    "month":   "ME",
+    "quarter": "QE",
+    "year":    "Y-DEC",
 }
 
 
@@ -461,16 +470,18 @@ class AggregationEngine:
 
         date_range_days = int((valid.max() - valid.min()).days)
         bucket = _resolve_bucket(spec, date_range_days)
-        freq   = _BUCKET_FREQ[bucket]
+        freq_period = _BUCKET_FREQ_PERIOD[bucket]
+        freq_offset = _BUCKET_FREQ_OFFSET[bucket]
 
         temp = df.copy()
         temp["_date"] = date_col
         temp = temp.dropna(subset=["_date"])
         # Strip tz before to_period to avoid pandas UserWarning; re-localize after
         _naive = temp["_date"].dt.tz_convert("UTC").dt.tz_localize(None)
-        temp["_bucket"] = _naive.dt.to_period(freq).dt.start_time.dt.tz_localize("UTC")
+        # Use end_time to match pd.date_range (which gives quarter end dates like Mar 31, Jun 30)
+        temp["_bucket"] = _naive.dt.to_period(freq_period).dt.end_time.dt.tz_localize("UTC")
 
-        spine = pd.date_range(temp["_bucket"].min(), temp["_bucket"].max(), freq=freq, tz="UTC")
+        spine = pd.date_range(temp["_bucket"].min(), temp["_bucket"].max(), freq=freq_offset, tz="UTC")
         x_axis = [_fmt_bucket_label(pd.Timestamp(ts), bucket) for ts in spine]
 
         y_is_count = _is_count_field(resolved_y)
@@ -483,7 +494,8 @@ class AggregationEngine:
             for grp in groups:
                 sub = temp[temp["_group"] == grp]
                 if y_is_count:
-                    counts = sub.groupby("_bucket").size().reindex(spine, fill_value=0)
+                    grouped = sub.groupby("_bucket").size()
+                    counts = grouped.reindex(spine, fill_value=0)
                 else:
                     numeric_y = pd.to_numeric(sub[resolved_y], errors="coerce").fillna(0)
                     counts = sub.assign(_y=numeric_y).groupby("_bucket")["_y"].sum().reindex(spine, fill_value=0)
@@ -539,19 +551,21 @@ class AggregationEngine:
             if not valid.empty:
                 date_range_days = int((valid.max() - valid.min()).days)
                 bucket = _resolve_bucket(spec, date_range_days)
-                freq = _BUCKET_FREQ[bucket]
+                freq_period = _BUCKET_FREQ_PERIOD[bucket]
+                freq_offset = _BUCKET_FREQ_OFFSET[bucket]
                 df = df.copy()
                 df["_date"] = date_col
                 df = df.dropna(subset=["_date"])
                 # Strip tz before to_period to avoid pandas UserWarning; re-localize after
                 _naive = df["_date"].dt.tz_convert("UTC").dt.tz_localize(None)
-                df["_bucket_ts"] = _naive.dt.to_period(freq).dt.start_time.dt.tz_localize("UTC")
+                # Use end_time to match pd.date_range (quarter end dates)
+                df["_bucket_ts"] = _naive.dt.to_period(freq_period).dt.end_time.dt.tz_localize("UTC")
                 df[resolved_x] = df["_bucket_ts"].apply(
                     lambda ts: _fmt_bucket_label(pd.Timestamp(ts), bucket)
                 )
                 # Full chronological spine so gaps are preserved
                 spine = pd.date_range(
-                    df["_bucket_ts"].min(), df["_bucket_ts"].max(), freq=freq, tz="UTC"
+                    df["_bucket_ts"].min(), df["_bucket_ts"].max(), freq=freq_offset, tz="UTC"
                 )
                 x_order_override = [_fmt_bucket_label(pd.Timestamp(ts), bucket) for ts in spine]
 
@@ -689,14 +703,16 @@ class AggregationEngine:
 
         date_range_days = int((created_dates.max() - created_dates.min()).days)
         bucket = _resolve_bucket(spec, date_range_days)
-        freq   = _BUCKET_FREQ[bucket]
+        freq_period = _BUCKET_FREQ_PERIOD[bucket]
+        freq_offset = _BUCKET_FREQ_OFFSET[bucket]
 
         temp = df.copy()
         temp["_created"] = pd.to_datetime(df[created_col], errors="coerce", utc=True)
         temp = temp.dropna(subset=["_created"])
-        temp["_bucket"] = temp["_created"].dt.to_period(freq).dt.start_time.dt.tz_localize("UTC")
+        # Use end_time to match pd.date_range (quarter end dates)
+        temp["_bucket"] = temp["_created"].dt.to_period(freq_period).dt.end_time.dt.tz_localize("UTC")
 
-        spine = pd.date_range(temp["_bucket"].min(), temp["_bucket"].max(), freq=freq, tz="UTC")
+        spine = pd.date_range(temp["_bucket"].min(), temp["_bucket"].max(), freq=freq_offset, tz="UTC")
         x_axis = [_fmt_bucket_label(pd.Timestamp(ts), bucket) for ts in spine]
 
         created_counts = temp.groupby("_bucket").size().reindex(spine, fill_value=0)
@@ -710,7 +726,7 @@ class AggregationEngine:
             res_valid = temp.dropna(subset=["_resolved"])
             if not res_valid.empty:
                 res_valid = res_valid.copy()
-                res_valid["_res_bucket"] = res_valid["_resolved"].dt.to_period(freq).dt.start_time.dt.tz_localize("UTC")
+                res_valid["_res_bucket"] = res_valid["_resolved"].dt.to_period(freq_period).dt.end_time.dt.tz_localize("UTC")
                 resolved_counts = res_valid.groupby("_res_bucket").size().reindex(spine, fill_value=0)
                 has_resolved = True
 

@@ -2,7 +2,7 @@
   import type { ChartConfig } from './dashboardTypes.js';
   import { dashboardStore } from './dashboardStore.svelte.js';
   import ChartRenderer from '../charts/ChartRenderer.svelte';
-  import { buildSingleLine, TrendChart } from '../charts/specBuilder.js';
+  import { LineChart, TrendChart } from '../charts/specBuilder.js';
   import type { AggregateResponse } from '../charts/chartStore.svelte.js';
   import type { ApiIssue } from '../charts/chartStore.svelte.js';
 
@@ -30,17 +30,27 @@
       return new TrendChart(rawIssues, { title: config.title, animation: true }).build();
     }
 
-    // For line chart with real data, use series data
-    if (config.type === 'line' && result?.series?.length) {
-      const xAxis = result.x_axis ?? [];
-      const firstSeries = result.series[0];
-      if (firstSeries?.data) {
-        const entries = xAxis.map((label: string, i: number) => [label, firstSeries.data[i] ?? 0] as [string, number]);
-        return buildSingleLine(entries, config.title, true);
+    // For line chart - use LineChart class with proper series support
+    if (config.type === 'line') {
+      // If we have multi-series data from aggregate (color_field was used)
+      if (result?.series && result.series.length > 0) {
+        return new LineChart()
+          .setTitle(config.title)
+          .setSeriesFromAggregate(result.x_axis ?? [], result.series)
+          .build();
       }
+      // Single line with simple data
+      if (result) {
+        const data = convertResultToData(result);
+        if (data.length > 0) {
+          return new LineChart().setTitle(config.title).setData(data).build();
+        }
+      }
+      // Fallback to mock
+      return new LineChart().setTitle(config.title).setData(config.mockData?.[dimension] ?? []).build();
     }
 
-    // Use aggregated data if available
+    // Use aggregated data if available (for pie, bar)
     if (result) {
       const data = convertResultToData(result);
       return config.builder(data, dimension);
