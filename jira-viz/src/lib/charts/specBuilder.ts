@@ -364,48 +364,181 @@ export function buildPie(entries: [string, number][], title: string, maxItems = 
   };
 }
 
-export function buildTrend(issues: ApiIssue[], animation = true, forceBucket?: BucketType): EChartsOption | null {
-  const allDates = issues.map(i => parseDate(i.created)).filter((d): d is Date => d !== null);
-  if (!allDates.length) return null;
+/**
+ * TrendChart class - reusable trend chart builder.
+ *
+ * Usage:
+ *   const chart = new TrendChart(issues, { title: 'My Trend', animation: true });
+ *   const option = chart.build();
+ *
+ *   // Or fluent interface:
+ *   const option = new TrendChart(issues).setTitle('Custom').build();
+ */
+export class TrendChart {
+  private issues: ApiIssue[];
+  private options: {
+    title?: string;
+    animation?: boolean;
+    forceBucket?: BucketType;
+    createdField?: string;
+    resolvedField?: string;
+  };
 
-  const bucket  = forceBucket ?? autoBucket(new Date(Math.min(...allDates.map(d => d.getTime()))), new Date(Math.max(...allDates.map(d => d.getTime()))));
-  const created = bucketByDate(issues, 'created', bucket);
-  if (created.length < 2) return null;
-
-  const labels       = created.map(b => b.label);
-  const hasResolved  = issues.some(i => parseDate(i.resolutiondate));
-  const resolvedMap  = new Map<string, number>();
-  if (hasResolved) {
-    bucketByDate(issues, 'resolutiondate', bucket).forEach(b => resolvedMap.set(b.label, b.count));
+  constructor(
+    issues: ApiIssue[],
+    options: {
+      title?: string;
+      animation?: boolean;
+      forceBucket?: BucketType;
+      createdField?: string;
+      resolvedField?: string;
+    } = {}
+  ) {
+    this.issues = issues;
+    this.options = {
+      title: 'Issue Trend',
+      animation: true,
+      createdField: 'created',
+      resolvedField: 'resolutiondate',
+      ...options,
+    };
   }
 
-  let cumCreated = 0, cumResolved = 0;
-  const openData     = labels.map(l => { cumCreated += created.find(b => b.label === l)?.count ?? 0; cumResolved += resolvedMap.get(l) ?? 0; return cumCreated - cumResolved; });
-  const createdData  = created.map(b => b.count);
-  const resolvedData = hasResolved ? labels.map(l => resolvedMap.get(l) ?? 0) : null;
+  /** Set issues to chart */
+  setIssues(issues: ApiIssue[]): this {
+    this.issues = issues;
+    return this;
+  }
 
-  const series = [
-    {
-      name: 'Open (cumulative)', type: 'line', data: openData, smooth: true, symbol: 'none',
-      lineStyle: { color: '#818cf8', width: 2 },
-      areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(129,140,248,0.25)' }, { offset: 1, color: 'rgba(129,140,248,0.02)' }] } },
-    },
-    { name: 'Created', type: 'bar', data: createdData, barMaxWidth: 20, itemStyle: { color: 'rgba(129,140,248,0.4)' }, label: { show: labels.length <= 15, position: 'top' as const, color: '#e2e8f0', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV } },
-    ...(resolvedData ? [{ name: 'Resolved', type: 'bar', data: resolvedData, barMaxWidth: 20, itemStyle: { color: 'rgba(52,211,153,0.5)' }, label: { show: labels.length <= 15, position: 'top' as const, color: '#e2e8f0', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV } }] : []),
-  ];
+  /** Update options (merged with existing) */
+  setOptions(options: Partial<typeof this.options>): this {
+    this.options = { ...this.options, ...options };
+    return this;
+  }
 
-  const axisLabel = { color: '#94a3b8', fontSize: 10, rotate: labels.length > 10 ? 30 : 0, interval: Math.max(0, Math.floor(labels.length / 8) - 1) };
+  /** Set chart title */
+  setTitle(title: string): this {
+    this.options.title = title;
+    return this;
+  }
 
-  return {
-    ...BASE_OPTION, animation,
-    tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis' },
-    legend: { show: true, top: 24, right: 6, textStyle: { color: '#94a3b8', fontSize: 10 }, icon: 'circle', itemWidth: 8, itemHeight: 8 },
-    title: { text: 'Issue Trend', textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
-    xAxis: { type: 'category', data: labels, axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel, splitLine: { show: false } },
-    yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#94a3b8', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } }, minInterval: 1 },
-    series,
-    grid: { ...BASE_OPTION.grid as object, top: 52 },
-  };
+  /** Set animation */
+  setAnimation(animation: boolean): this {
+    this.options.animation = animation;
+    return this;
+  }
+
+  /** Force a specific bucket type */
+  setBucket(bucket: BucketType): this {
+    this.options.forceBucket = bucket;
+    return this;
+  }
+
+  /** Build and return ECharts option */
+  build(): EChartsOption | null {
+    const { title, animation, forceBucket, createdField, resolvedField } = this.options;
+
+    const allDates = this.issues
+      .map(i => parseDate(i[createdField as keyof ApiIssue]))
+      .filter((d): d is Date => d !== null);
+
+    if (!allDates.length) return null;
+
+    const bucket = forceBucket ?? autoBucket(
+      new Date(Math.min(...allDates.map(d => d.getTime()))),
+      new Date(Math.max(...allDates.map(d => d.getTime())))
+    );
+
+    const created = bucketByDate(this.issues, createdField as string, bucket);
+    if (created.length < 2) return null;
+
+    const labels = created.map(b => b.label);
+    const hasResolved = this.issues.some(i => parseDate(i[resolvedField as keyof ApiIssue]));
+    const resolvedMap = new Map<string, number>();
+
+    if (hasResolved) {
+      bucketByDate(this.issues, resolvedField as string, bucket).forEach(b => resolvedMap.set(b.label, b.count));
+    }
+
+    let cumCreated = 0, cumResolved = 0;
+    const openData = labels.map(l => {
+      cumCreated += created.find(b => b.label === l)?.count ?? 0;
+      cumResolved += resolvedMap.get(l) ?? 0;
+      return cumCreated - cumResolved;
+    });
+    const createdData = created.map(b => b.count);
+    const resolvedData = hasResolved ? labels.map(l => resolvedMap.get(l) ?? 0) : null;
+
+    const series = [
+      {
+        name: 'Open (cumulative)', type: 'line', data: openData, smooth: true, symbol: 'none',
+        lineStyle: { color: '#818cf8', width: 2 },
+        areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(129,140,248,0.25)' }, { offset: 1, color: 'rgba(129,140,248,0.02)' }] } },
+      },
+      { name: 'Created', type: 'bar', data: createdData, barMaxWidth: 20, itemStyle: { color: 'rgba(129,140,248,0.4)' }, label: { show: labels.length <= 15, position: 'top' as const, color: '#e2e8f0', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV } },
+      ...(resolvedData ? [{ name: 'Resolved', type: 'bar', data: resolvedData, barMaxWidth: 20, itemStyle: { color: 'rgba(52,211,153,0.5)' }, label: { show: labels.length <= 15, position: 'top' as const, color: '#e2e8f0', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV } }] : []),
+    ];
+
+    const axisLabel = { color: '#94a3b8', fontSize: 10, rotate: labels.length > 10 ? 30 : 0, interval: Math.max(0, Math.floor(labels.length / 8) - 1) };
+
+    return {
+      ...BASE_OPTION, animation,
+      tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis' },
+      legend: { show: true, top: 24, right: 6, textStyle: { color: '#94a3b8', fontSize: 10 }, icon: 'circle', itemWidth: 8, itemHeight: 8 },
+      title: { text: title, textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
+      xAxis: { type: 'category', data: labels, axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel, splitLine: { show: false } },
+      yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#94a3b8', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } }, minInterval: 1 },
+      series,
+      grid: { ...BASE_OPTION.grid as object, top: 52 },
+    };
+  }
+
+  /** Get raw data for custom rendering */
+  getData(): { labels: string[]; created: number[]; resolved: number[]; open: number[] } | null {
+    const { forceBucket, createdField, resolvedField } = this.options;
+
+    const allDates = this.issues
+      .map(i => parseDate(i[createdField as keyof ApiIssue]))
+      .filter((d): d is Date => d !== null);
+
+    if (!allDates.length) return null;
+
+    const bucket = forceBucket ?? autoBucket(
+      new Date(Math.min(...allDates.map(d => d.getTime()))),
+      new Date(Math.max(...allDates.map(d => d.getTime())))
+    );
+
+    const created = bucketByDate(this.issues, createdField as string, bucket);
+    const labels = created.map(b => b.label);
+
+    const hasResolved = this.issues.some(i => parseDate(i[resolvedField as keyof ApiIssue]));
+    const resolvedMap = new Map<string, number>();
+
+    if (hasResolved) {
+      bucketByDate(this.issues, resolvedField as string, bucket).forEach(b => resolvedMap.set(b.label, b.count));
+    }
+
+    let cumCreated = 0, cumResolved = 0;
+    const open = labels.map(l => {
+      cumCreated += created.find(b => b.label === l)?.count ?? 0;
+      cumResolved += resolvedMap.get(l) ?? 0;
+      return cumCreated - cumResolved;
+    });
+
+    return {
+      labels,
+      created: created.map(b => b.count),
+      resolved: hasResolved ? labels.map(l => resolvedMap.get(l) ?? 0) : [],
+      open,
+    };
+  }
+}
+
+/**
+ * Backward-compatible wrapper using the TrendChart class.
+ */
+export function buildTrend(issues: ApiIssue[], animation = true, forceBucket?: BucketType): EChartsOption | null {
+  return new TrendChart(issues, { animation, forceBucket }).build();
 }
 
 /**

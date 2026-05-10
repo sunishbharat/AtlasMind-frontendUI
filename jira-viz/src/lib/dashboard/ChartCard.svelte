@@ -2,6 +2,9 @@
   import type { ChartConfig } from './dashboardTypes.js';
   import { dashboardStore } from './dashboardStore.svelte.js';
   import ChartRenderer from '../charts/ChartRenderer.svelte';
+  import { buildSingleLine, TrendChart } from '../charts/specBuilder.js';
+  import type { AggregateResponse } from '../charts/chartStore.svelte.js';
+  import type { ApiIssue } from '../charts/chartStore.svelte.js';
 
   interface Props {
     config: ChartConfig;
@@ -16,14 +19,38 @@
   const hasData = $derived(!!chartData?.result);
   const loading = $derived(chartData?.loading ?? false);
   const queryValue = $derived(chartData?.query ?? '');
+  const rawIssues = $derived(chartData?.issues ?? []);
 
-  const chartOption = $derived(
-    hasData && chartData?.result
-      ? config.builder(convertResultToData(chartData.result), dimension)
-      : config.builder(config.mockData?.[dimension] ?? [], dimension)
-  );
+  // Build chart option based on chart type
+  const chartOption = $derived.by(() => {
+    const result = chartData?.result;
 
-  function convertResultToData(result: NonNullable<typeof chartData.result>): [string, number][] {
+    // For trend, use TrendChart class (same as AI view)
+    if (config.type === 'trend' && rawIssues.length > 0) {
+      return new TrendChart(rawIssues, { title: config.title, animation: true }).build();
+    }
+
+    // For line chart with real data, use series data
+    if (config.type === 'line' && result?.series?.length) {
+      const xAxis = result.x_axis ?? [];
+      const firstSeries = result.series[0];
+      if (firstSeries?.data) {
+        const entries = xAxis.map((label: string, i: number) => [label, firstSeries.data[i] ?? 0] as [string, number]);
+        return buildSingleLine(entries, config.title, true);
+      }
+    }
+
+    // Use aggregated data if available
+    if (result) {
+      const data = convertResultToData(result);
+      return config.builder(data, dimension);
+    }
+
+    // Fallback to mock data
+    return config.builder(config.mockData?.[dimension] ?? [], dimension);
+  });
+
+  function convertResultToData(result: AggregateResponse): [string, number][] {
     if (result.pie_data) {
       return result.pie_data.map((d: { name: string; value: number }) => [d.name, d.value]);
     }
@@ -79,29 +106,36 @@
   </div>
 
   <div class="chart-area">
-    <ChartRenderer option={chartOption} height="280px" />
+    <div class="chart-container">
+      <ChartRenderer option={chartOption} height="100%" />
+    </div>
   </div>
 </div>
 
 <style>
   .chart-card {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
     background: #161b22;
     border: 1px solid #30363d;
-    border-radius: 8px;
-    padding: 16px;
+    border-radius: clamp(4px, 0.8vw, 8px);
+    padding: clamp(0.5rem, 1vw, 0.75rem);
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
   }
 
   .card-header {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 8px;
+    gap: clamp(0.5rem, 1vw, 0.75rem);
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
   }
 
   .card-title {
-    font-size: 14px;
+    font-size: clamp(12px, 1.5vw, 16px);
     font-weight: 500;
     color: #e6edf3;
   }
@@ -110,7 +144,7 @@
     background: #0d1117;
     border: 1px solid #30363d;
     color: #8b949e;
-    font-size: 12px;
+    font-size: clamp(10px, 1.2vw, 12px);
     padding: 4px 8px;
     border-radius: 4px;
     cursor: pointer;
@@ -123,17 +157,18 @@
   .query-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 12px;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
   }
 
   .chart-query-input {
     flex: 1;
+    min-width: 0;
     background: #1e293b;
     border: 1px solid #30363d;
     border-radius: 4px;
     color: #e6edf3;
-    font-size: 12px;
+    font-size: clamp(10px, 1.2vw, 12px);
     padding: 6px 10px;
     outline: none;
     transition: border-color 0.15s;
@@ -153,12 +188,28 @@
   }
 
   .loading-indicator {
-    font-size: 12px;
+    font-size: clamp(10px, 1.2vw, 12px);
     color: #818cf8;
+    flex-shrink: 0;
   }
 
   .chart-area {
     flex: 1;
     min-height: 0;
+    width: 100%;
+    position: relative;
+  }
+
+  .chart-container {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    position: relative;
+  }
+
+  /* Ensure chart renderer fills container */
+  .chart-container :global(canvas) {
+    width: 100% !important;
+    height: 100% !important;
   }
 </style>

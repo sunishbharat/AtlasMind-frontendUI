@@ -1,13 +1,15 @@
 <script lang="ts">
-  import { buildPie, buildBar } from '../charts/specBuilder.js';
+  import { buildPie, buildBar, buildSingleLine } from '../charts/specBuilder.js';
   import ChartCard from './ChartCard.svelte';
   import { dashboardStore } from './dashboardStore.svelte.js';
   import { authStore } from '../auth.svelte.js';
   import { aggregateIssues } from './aggregateUtils.js';
   import type { ChartConfig } from './dashboardTypes.js';
+  import type { ApiIssue } from '../charts/chartStore.svelte.js';
 
   // - Types --------------------------------------------------------------------
   type Dimension = 'status' | 'priority' | 'assignee' | 'project' | 'issuetype';
+  type TimeField = 'created' | 'resolutiondate' | 'updated';
 
   // - Dropdown options ---------------------------------------------------------
   const PIE_DIMENSIONS: { value: Dimension; label: string }[] = [
@@ -24,6 +26,12 @@
     { value: 'priority', label: 'Priority' },
     { value: 'status', label: 'Status' },
     { value: 'issuetype', label: 'Type' },
+  ];
+
+  const LINE_DIMENSIONS: { value: TimeField; label: string }[] = [
+    { value: 'created', label: 'Created' },
+    { value: 'resolutiondate', label: 'Resolved' },
+    { value: 'updated', label: 'Updated' },
   ];
 
   // - Mock data ----------------------------------------------------------------
@@ -43,7 +51,23 @@
     issuetype: [['Story', 78], ['Bug', 45], ['Task', 32], ['Epic', 15]],
   };
 
+  const MOCK_LINE: Record<TimeField, [string, number][]> = {
+    created: [['Jan', 45], ['Feb', 62], ['Mar', 78], ['Apr', 55], ['May', 89], ['Jun', 72]],
+    resolutiondate: [['Jan', 38], ['Feb', 55], ['Mar', 68], ['Apr', 72], ['May', 81], ['Jun', 65]],
+    updated: [['Jan', 50], ['Feb', 58], ['Mar', 85], ['Apr', 62], ['May', 77], ['Jun', 70]],
+  };
+
   // - Config: add/remove/reorder charts here ----------------------------------
+  // Wrapper functions to adapt builder signatures
+  const pieBuilder = (data: [string, number][], _dim: string, maxItems = 10, gradient = true) =>
+    buildPie(data, 'Pie Chart', maxItems, gradient);
+  const barBuilder = (data: [string, number][], _dim: string, maxItems = 20, gradient = true) =>
+    buildBar(data, 'Bar Chart', maxItems, gradient);
+  const lineBuilder = (data: [string, number][], _dim: string, _maxItems?: number, _gradient?: boolean) =>
+    buildSingleLine(data, 'Line Chart', true);
+  const trendBuilder = (data: [string, number][], _dim: string, _maxItems?: number, _gradient?: boolean) =>
+    buildSingleLine(data, 'Trend Chart', true);
+
   const DASHBOARD_CHARTS: ChartConfig[] = [
     {
       id: 'pie',
@@ -51,7 +75,7 @@
       type: 'pie',
       defaultDimension: 'status',
       options: PIE_DIMENSIONS,
-      builder: buildPie as (data: [string, number][], dim: string, maxItems?: number, gradient?: boolean) => object,
+      builder: pieBuilder,
       mockData: MOCK_PIE as Record<string, [string, number][]>,
     },
     {
@@ -60,8 +84,26 @@
       type: 'bar',
       defaultDimension: 'assignee',
       options: BAR_X_OPTIONS,
-      builder: buildBar as (data: [string, number][], dim: string, maxItems?: number, gradient?: boolean) => object,
+      builder: barBuilder,
       mockData: MOCK_BAR as Record<string, [string, number][]>,
+    },
+    {
+      id: 'line',
+      title: 'Line Chart',
+      type: 'line',
+      defaultDimension: 'created',
+      options: LINE_DIMENSIONS,
+      builder: lineBuilder,
+      mockData: MOCK_LINE as Record<string, [string, number][]>,
+    },
+    {
+      id: 'trend',
+      title: 'Trend Chart',
+      type: 'trend',
+      defaultDimension: 'created',
+      options: LINE_DIMENSIONS,
+      builder: trendBuilder,
+      mockData: MOCK_LINE as Record<string, [string, number][]>,
     },
   ];
 
@@ -76,6 +118,16 @@
       }
     }
   });
+
+  // - Chart type mapping ------------------------------------------------------
+  function getChartType(chartId: string): 'pie' | 'bar' | 'line' | 'trend' {
+    switch (chartId) {
+      case 'pie': return 'pie';
+      case 'line': return 'line';
+      case 'trend': return 'trend';
+      default: return 'bar';
+    }
+  }
 
   // - Query trigger -----------------------------------------------------------
   async function triggerQuery(chartId: string, query: string): Promise<void> {
@@ -94,12 +146,11 @@
       console.log('[Dashboard] query response:', data.output?.type, '| issues:', data.output?.issues?.length);
 
       if (data.output?.type === 'jql' && data.output.issues?.length) {
-        // Use shared utility - no need to worry about chart_spec format
         const dim = dimensions[chartId] || 'status';
         const aggData = await aggregateIssues(
           data.output.issues,
           {
-            chartType: chartId === 'pie' ? 'pie' : 'bar',
+            chartType: getChartType(chartId),
             xField: dim,
           },
           authStore.pat || undefined
@@ -132,7 +183,7 @@
       const aggData = await aggregateIssues(
         issues,
         {
-          chartType: chartId === 'pie' ? 'pie' : 'bar',
+          chartType: getChartType(chartId),
           xField: dim,
         },
         authStore.pat || undefined
@@ -145,39 +196,84 @@
   }
 </script>
 
-<div class="dash-simple">
-  <main class="charts-row">
+<div class="dash-container">
+  <main class="charts-grid">
     {#each DASHBOARD_CHARTS as cfg}
-      <ChartCard
-        config={cfg}
-        dimension={dimensions[cfg.id] ?? cfg.defaultDimension ?? ''}
-        onDimensionChange={(v) => handleDimensionChange(cfg.id, v)}
-        onQuery={(q) => triggerQuery(cfg.id, q)}
-      />
+      <div class="chart-wrapper">
+        <ChartCard
+          config={cfg}
+          dimension={dimensions[cfg.id] ?? cfg.defaultDimension ?? ''}
+          onDimensionChange={(v) => handleDimensionChange(cfg.id, v)}
+          onQuery={(q) => triggerQuery(cfg.id, q)}
+        />
+      </div>
     {/each}
   </main>
 </div>
 
 <style>
-  .dash-simple {
-    min-height: 100vh;
+  .dash-container {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
     background: #0d1117;
     color: #e6edf3;
     font-family: 'Inter', system-ui, sans-serif;
-    padding: 16px;
+    padding: clamp(0.75rem, 1.5vw, 1rem);
+    box-sizing: border-box;
   }
 
-  .charts-row {
+  .charts-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    height: calc(100vh - 80px);
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: clamp(0.5rem, 1vw, 1rem);
+    flex: 1;
+    width: 100%;
+    max-width: 100%;
+    min-height: 0;
+    box-sizing: border-box;
   }
 
+  .chart-wrapper {
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    box-sizing: border-box;
+  }
+
+  /* Tablet (< 1024px) */
+  @media (max-width: 1024px) {
+    .charts-grid {
+      gap: 0.75rem;
+    }
+  }
+
+  /* Mobile (< 768px) - single column */
   @media (max-width: 768px) {
-    .charts-row {
-      grid-template-columns: 1fr;
+    .dash-container {
       height: auto;
+      min-height: 400px;
+    }
+
+    .charts-grid {
+      grid-template-columns: 1fr;
+      grid-template-rows: repeat(4, minmax(150px, 1fr));
+      gap: 0.75rem;
+      min-height: 400px;
+    }
+  }
+
+  /* Small mobile (< 480px) */
+  @media (max-width: 480px) {
+    .dash-container {
+      padding: 0.5rem;
+    }
+
+    .charts-grid {
+      gap: 0.5rem;
     }
   }
 </style>
