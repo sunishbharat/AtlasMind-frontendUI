@@ -203,10 +203,7 @@
   ═════════════════════════════════════════════════════════════════════════ -->
   <div class="hrow hrow-brand" aria-label="Project info">
     <div class="brand-left">
-      <div class="logo">
-        <Logo />
-      </div>
-      <span class="brand-tag">AtlasMind</span>
+      <Logo variant="pill" />
       <span class="brand-divider"></span>
       <div class="brand-title">
         <span class="brand-sprint">Insight Engine</span>
