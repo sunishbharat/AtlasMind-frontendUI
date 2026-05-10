@@ -185,15 +185,58 @@
     fileInput.value = "";
   }
 
-  // - Sprint stats (reactive) -------------------------------------------------
-  const allItems = $derived([
-    ...dataStore.epics,
-    ...dataStore.stories,
-    ...dataStore.subtasks,
-  ]);
-  const done = $derived(allItems.filter((i) => i.status === "Done").length);
+  // - Sprint stats (reactive) -----------------------------------------------
+  // Get all issues: prefer chartStore (live query) else fall back to dataStore
+  const allItemsRaw = $derived(
+    chartStore.hasData
+      ? chartStore.issues
+      : [...dataStore.epics, ...dataStore.stories, ...dataStore.subtasks]
+  );
+
+  // Normalize to common shape with issuetype and status
+  const allItems = $derived(
+    allItemsRaw.map((i) => ({
+      issuetype: (i.issuetype as string) || (i.type as string) || 'Unknown',
+      status: (i.status as string) || i.status || 'To Do',
+    }))
+  );
+
+  // Statuses that count as resolved/done
+  const RESOLVED_STATUSES = ['done', 'resolved', 'closed', 'completed', 'finished'];
+
+  function isResolved(status: string): boolean {
+    return RESOLVED_STATUSES.includes(status.toLowerCase());
+  }
+
+  // Group by issuetype with count and resolved %
+  interface TypeStats {
+    label: string;
+    count: number;
+    done: number;
+    pct: number;
+  }
+  const typeStats = $derived.by((): TypeStats[] => {
+    const groups: Record<string, { total: number; done: number }> = {};
+    for (const item of allItems) {
+      const itype = item.issuetype;
+      if (!groups[itype]) groups[itype] = { total: 0, done: 0 };
+      groups[itype].total++;
+      if (isResolved(item.status)) groups[itype].done++;
+    }
+    return Object.entries(groups)
+      .map(([label, g]) => ({
+        label,
+        count: g.total,
+        done: g.done,
+        pct: g.total > 0 ? Math.round((g.done / g.total) * 100) : 0,
+      }))
+      .sort((a, b) => b.count - a.count); // sort by count descending
+  });
+
+  // Overall progress
+  const done = $derived(allItems.filter((i) => isResolved(i.status)).length);
   const total = $derived(allItems.length);
-  const pct = $derived(Math.round((done / total) * 100));
+  const pct = $derived(total > 0 ? Math.round((done / total) * 100) : 0);
   const sprintName = $derived(dataStore.epics[0]?.sprint ?? "Sprint");
 </script>
 
@@ -216,18 +259,13 @@
     </div>
 
     <div class="brand-stats">
-      <div class="stat-pill">
-        <span class="stat-pill-val">{dataStore.epics.length}</span>
-        <span class="stat-pill-label">Epics</span>
-      </div>
-      <div class="stat-pill">
-        <span class="stat-pill-val">{dataStore.stories.length}</span>
-        <span class="stat-pill-label">Stories</span>
-      </div>
-      <div class="stat-pill">
-        <span class="stat-pill-val">{dataStore.subtasks.length}</span>
-        <span class="stat-pill-label">Sub-tasks</span>
-      </div>
+      {#each typeStats as ts}
+        <div class="stat-pill">
+          <span class="stat-pill-val">{ts.count}</span>
+          <span class="stat-pill-label">{ts.label}</span>
+          <span class="stat-pill-done">{ts.pct}%</span>
+        </div>
+      {/each}
 
       <div class="brand-progress">
         <div class="progress-track">
@@ -770,18 +808,25 @@
   }
 
   .stat-pill-val {
-    font-size: 15px;
+    font-size: 8px;
     font-weight: 700;
     color: #94a3b8;
     line-height: 1;
   }
 
   .stat-pill-label {
-    font-size: 10px;
+    font-size: 7px;
     font-weight: 600;
     letter-spacing: 0.07em;
     text-transform: uppercase;
     color: #4e6884;
+  }
+
+  .stat-pill-done {
+    font-size: 7px;
+    font-weight: 600;
+    color: #22c55e;
+    margin-left: 2px;
   }
 
   .build-badge {
