@@ -6,10 +6,42 @@
   import { aggregateIssues } from './aggregateUtils.js';
   import type { ChartConfig } from './dashboardTypes.js';
   import type { ApiIssue } from '../charts/chartStore.svelte.js';
+  import { chartStore } from '../charts/index.js';
 
   // - Types --------------------------------------------------------------------
   type Dimension = 'status' | 'priority' | 'assignee' | 'project' | 'issuetype';
   type TimeField = 'created' | 'resolutiondate' | 'updated';
+
+  // - Dynamic field options from backend ----------------------------------------
+  // Derive available fields from the last AI query response
+  const availableFields = $derived(chartStore.data?.display_fields ?? []);
+  const availableFieldSet = $derived(new Set(availableFields.map(f => f.toLowerCase())));
+
+  // Map backend fields to our dimension keys
+  const FIELD_TO_DIMENSION: Record<string, Dimension> = {
+    'status': 'status',
+    'priority': 'priority',
+    'assignee': 'assignee',
+    'project': 'project',
+    'issuetype': 'issuetype',
+    'issue type': 'issuetype',
+  };
+
+  const TIME_FIELDS = ['created', 'resolved', 'updated', 'resolutiondate'];
+  const timeFieldOptions = $derived(
+    availableFields
+      .filter(f => TIME_FIELDS.includes(f.toLowerCase()))
+      .map(f => ({ value: f.toLowerCase() as TimeField, label: f }))
+  );
+
+  const trendBreakdownOptions = $derived(
+    availableFields
+      .filter(f => FIELD_TO_DIMENSION[f.toLowerCase()])
+      .map(f => ({
+        value: FIELD_TO_DIMENSION[f.toLowerCase()],
+        label: f
+      }))
+  );
 
   // - Dropdown options ---------------------------------------------------------
   const PIE_DIMENSIONS: { value: Dimension; label: string }[] = [
@@ -34,9 +66,10 @@
     { value: 'updated', label: 'Updated' },
   ];
 
-  // - Trend chart breakdown options -------------------------------------------
+  // - Trend chart breakdown options (dynamic from backend fields) ---------------
   type BreakdownField = 'status' | 'priority' | 'assignee' | 'issuetype' | '';
-  const TREND_BREAKDOWN: { value: BreakdownField; label: string }[] = [
+  // Default fallback options when no backend fields available
+  const DEFAULT_TREND_BREAKDOWN: { value: BreakdownField; label: string }[] = [
     { value: '', label: 'None' },
     { value: 'status', label: 'Status' },
     { value: 'priority', label: 'Priority' },
@@ -44,8 +77,14 @@
     { value: 'issuetype', label: 'Type' },
   ];
 
+  const trendBreakdownOptions$ = $derived(
+    trendBreakdownOptions.length > 0
+      ? [{ value: '' as BreakdownField, label: 'None' }, ...trendBreakdownOptions.map(o => ({ value: o.value as BreakdownField, label: o.label }))]
+      : DEFAULT_TREND_BREAKDOWN
+  );
+
   // - Trend chart series options ---------------------------------------------
-  const TREND_SERIES = [
+  const DEFAULT_TREND_SERIES = [
     { value: 'open', label: 'Open (cumulative)' },
     { value: 'created', label: 'Created' },
     { value: 'resolved', label: 'Resolved' },
@@ -117,9 +156,9 @@
       id: 'trend',
       title: 'Trend Chart',
       type: 'trend',
-      // No time field dropdown - uses created by default
-      secondaryOptions: TREND_BREAKDOWN,
-      seriesOptions: TREND_SERIES,
+      // secondaryOptions will be overridden at render time with dynamic options
+      secondaryOptions: DEFAULT_TREND_BREAKDOWN,
+      seriesOptions: DEFAULT_TREND_SERIES,
       defaultSeries: ['open', 'created', 'resolved'],
       builder: trendBuilder,
       mockData: MOCK_LINE as Record<string, [string, number][]>,
@@ -267,6 +306,7 @@
           onSecondaryChange={(v) => handleBreakdownChange(cfg.id, v)}
           onSeriesChange={(v, checked) => handleSeriesChange(cfg.id, v, checked)}
           onQuery={(q) => triggerQuery(cfg.id, q)}
+          dynamicSecondaryOptions={cfg.id === 'trend' ? trendBreakdownOptions$ : undefined}
         />
       </div>
     {/each}

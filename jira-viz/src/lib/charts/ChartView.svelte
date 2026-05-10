@@ -64,8 +64,28 @@
   // - Axis selector state ------------------------------------------------------
   const CHART_TYPES = ["bar", "stacked_bar", "pie", "line", "scatter", "trend"];
 
-  // - Trend chart options -------------------------------------------------------
-  const TREND_BREAKDOWN = [
+  // - Dynamic trend options from backend fields ---------------------------------
+  const FIELD_TO_DIMENSION: Record<string, string> = {
+    'status': 'status',
+    'priority': 'priority',
+    'assignee': 'assignee',
+    'project': 'project',
+    'issuetype': 'issuetype',
+    'issue type': 'issuetype',
+  };
+
+  const trendBreakdownOptions$ = $derived.by(() => {
+    const fields = chartStore.data?.display_fields ?? [];
+    const options = fields
+      .filter(f => FIELD_TO_DIMENSION[f.toLowerCase()])
+      .map(f => ({ value: FIELD_TO_DIMENSION[f.toLowerCase()], label: f }));
+    return options.length > 0
+      ? [{ value: "", label: "None" }, ...options]
+      : DEFAULT_TREND_BREAKDOWN;
+  });
+
+  // - Default fallback options --------------------------------------------------
+  const DEFAULT_TREND_BREAKDOWN = [
     { value: "", label: "None" },
     { value: "status", label: "Status" },
     { value: "priority", label: "Priority" },
@@ -73,7 +93,7 @@
     { value: "issuetype", label: "Type" },
   ];
 
-  const TREND_SERIES = [
+  const DEFAULT_TREND_SERIES = [
     { value: "open", label: "Open" },
     { value: "created", label: "Created" },
     { value: "resolved", label: "Resolved" },
@@ -1493,7 +1513,7 @@
                     <div class="col-filter-menu cv-axis-menu">
                       <div class="col-filter-head">Breakdown</div>
                       <div class="col-filter-list">
-                        {#each TREND_BREAKDOWN as opt}
+                        {#each trendBreakdownOptions$ as opt}
                           <button
                             class="col-filter-item"
                             class:checked={trendBreakdown === opt.value}
@@ -1510,7 +1530,7 @@
                   {/if}
                 </div>
                 <div class="cv-trend-series">
-                  {#each TREND_SERIES as opt}
+                  {#each DEFAULT_TREND_SERIES as opt}
                     <label class="cv-trend-toggle">
                       <input
                         type="checkbox"

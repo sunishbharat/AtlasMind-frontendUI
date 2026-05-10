@@ -16,6 +16,9 @@
     onSecondaryChange?: (val: string) => void;
     onSeriesChange?: (val: string, checked: boolean) => void;
     onQuery: (query: string) => void;
+    // Dynamic options that override config options when available
+    dynamicSecondaryOptions?: { value: string; label: string }[];
+    dynamicSeriesOptions?: { value: string; label: string }[];
   }
 
   let {
@@ -27,6 +30,8 @@
     onSecondaryChange,
     onSeriesChange,
     onQuery,
+    dynamicSecondaryOptions,
+    dynamicSeriesOptions,
   }: Props = $props();
 
   const chartData = $derived(dashboardStore.charts[config.id]);
@@ -125,23 +130,23 @@
         {/each}
       </select>
     {/if}
-    {#if config.type === 'trend' && config.secondaryOptions}
+    {#if config.type === 'trend' && (config.secondaryOptions || dynamicSecondaryOptions)}
       <select
         value={secondaryDimension}
         onchange={(e) => onSecondaryChange?.(e.currentTarget.value)}
         onmousedown={(e) => e.stopPropagation()}
         class="secondary-select"
       >
-        {#each config.secondaryOptions as opt}
+        {#each (dynamicSecondaryOptions ?? config.secondaryOptions) as opt}
           <option value={opt.value}>{opt.label}</option>
         {/each}
       </select>
     {/if}
   </div>
 
-  {#if config.type === 'trend' && config.seriesOptions}
+  {#if config.type === 'trend' && (config.seriesOptions || dynamicSeriesOptions)}
     <div class="series-toggles">
-      {#each config.seriesOptions as opt}
+      {#each (dynamicSeriesOptions ?? config.seriesOptions) as opt}
         <label class="series-toggle">
           <input
             type="checkbox"
