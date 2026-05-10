@@ -1,4 +1,9 @@
 <script lang="ts">
+  // Props - use $state to make reactive
+  let { isActive = false }: { isActive?: boolean } = $props();
+  let active = $state(false);
+  $effect(() => { active = isActive; });
+
   // Split-panel view: chart (top/left) + AI results table (bottom/right).
   // Draggable divider resizes the split ratio.
   // Layout toggle switches between vertical and horizontal orientation.
@@ -258,6 +263,8 @@
   let _aggTimer: ReturnType<typeof setTimeout> | null = null;
 
   function triggerAggregate(): void {
+    // Guard: don't trigger if not active
+    if (!active) return;
     if (!issues.length || !axisX) return;
     if (_aggTimer) clearTimeout(_aggTimer);
     _aggTimer = setTimeout(async () => {
@@ -327,6 +334,7 @@
     }, 180);
   }
 
+  // Only trigger aggregates when there's actual AI query data - not for Dashboard
   $effect(() => {
     // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     axisX;
@@ -336,6 +344,8 @@
     reactToFilters;
     activeDateRange;
     dateField;
+    // Guard: only trigger aggregate when chart view is active AND has AI query data
+    if (!active || !chartStore.data) return;
     triggerAggregate();
   });
 

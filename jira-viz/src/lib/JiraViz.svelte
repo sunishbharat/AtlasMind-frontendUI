@@ -52,6 +52,7 @@
   let chatOpen = $state(true); // Open by default in Ask AI
   let mainView = $state<"dashboard" | "chart">("dashboard");
   let hasChartData = $state(false); // Track if chart data was ever captured
+  let lastAutoSwitchIssueCount = $state(0); // Track issues count at last auto-switch
 
   // - Query toggle state -------------------------------------------------------
   let queryOpen = $state(false);
@@ -109,11 +110,13 @@
     return out;
   }
 
-  // Sync mainView with chartStore
+  // Auto-switch to chart when issues count increases (new query)
   $effect(() => {
-    if (chartStore.hasData && mainView === "dashboard") {
+    const issueCount = chartStore.issues.length;
+    if (issueCount > 0 && issueCount > lastAutoSwitchIssueCount && mainView === "dashboard") {
       mainView = "chart";
       hasChartData = true;
+      lastAutoSwitchIssueCount = issueCount; // Remember we auto-switched for this batch
     }
   });
 
@@ -124,6 +127,7 @@
   function switchToDashboard() {
     // Just switch view, don't clear chart data so we can toggle back
     mainView = "dashboard";
+    // lastAutoSwitchIssueCount stays as-is - we only auto-switch when issues count increases
   }
   let aboutOpen = $state(false);
   let selectedIds = $state(new Set<string>(["hierarchy"]));
@@ -484,7 +488,7 @@
             in:scale={{ duration: 250, start: 0.96, easing: quintOut }}
             out:fade={{ duration: 150 }}
           >
-            <ChartView />
+            <ChartView isActive={mainView === "chart"} />
           </div>
         {:else}
           <div
@@ -492,7 +496,7 @@
             in:scale={{ duration: 250, start: 0.96, easing: quintOut }}
             out:fade={{ duration: 150 }}
           >
-            <DashboardV2 />
+            <DashboardV2 isActive={mainView === "dashboard"} />
           </div>
         {/if}
       {/key}
