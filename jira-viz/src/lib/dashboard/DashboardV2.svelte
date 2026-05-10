@@ -1,6 +1,10 @@
 <script lang="ts">
   import { buildPie, buildBar } from '../charts/specBuilder.js';
-  import ChartRenderer from '../charts/ChartRenderer.svelte';
+  import ChartCard from './ChartCard.svelte';
+  import { dashboardStore } from './dashboardStore.svelte.js';
+  import { authStore } from '../auth.svelte.js';
+  import { aggregateIssues } from './aggregateUtils.js';
+  import type { ChartConfig } from './dashboardTypes.js';
 
   // - Types --------------------------------------------------------------------
   type Dimension = 'status' | 'priority' | 'assignee' | 'project' | 'issuetype';
@@ -39,47 +43,118 @@
     issuetype: [['Story', 78], ['Bug', 45], ['Task', 32], ['Epic', 15]],
   };
 
-  // - State --------------------------------------------------------------------
-  let pieDimension = $state<Dimension>('status');
-  let barXAxis = $state<string>('assignee');
+  // - Config: add/remove/reorder charts here ----------------------------------
+  const DASHBOARD_CHARTS: ChartConfig[] = [
+    {
+      id: 'pie',
+      title: 'Pie Chart',
+      type: 'pie',
+      defaultDimension: 'status',
+      options: PIE_DIMENSIONS,
+      builder: buildPie as (data: [string, number][], dim: string, maxItems?: number, gradient?: boolean) => object,
+      mockData: MOCK_PIE as Record<string, [string, number][]>,
+    },
+    {
+      id: 'bar',
+      title: 'Bar Chart',
+      type: 'bar',
+      defaultDimension: 'assignee',
+      options: BAR_X_OPTIONS,
+      builder: buildBar as (data: [string, number][], dim: string, maxItems?: number, gradient?: boolean) => object,
+      mockData: MOCK_BAR as Record<string, [string, number][]>,
+    },
+  ];
 
-  // - Derived chart options (always use mock data) -------------------------------
-  const pieOption = $derived(
-    buildPie(MOCK_PIE[pieDimension], pieDimension, 10, true)
-  );
+  // - State per chart ---------------------------------------------------------
+  const dimensions = $state<Record<string, string>>({});
 
-  const barOption = $derived(
-    buildBar(MOCK_BAR[barXAxis] ?? [], barXAxis, 20, true)
-  );
+  // Initialize dimensions from config
+  $effect(() => {
+    for (const cfg of DASHBOARD_CHARTS) {
+      if (cfg.defaultDimension && !(cfg.id in dimensions)) {
+        dimensions[cfg.id] = cfg.defaultDimension;
+      }
+    }
+  });
+
+  // - Query trigger -----------------------------------------------------------
+  async function triggerQuery(chartId: string, query: string): Promise<void> {
+    if (!query.trim()) return;
+
+    dashboardStore.setLoading(chartId, true);
+    dashboardStore.setQuery(chartId, query);
+
+    try {
+      const res = await fetch('/api/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, pat: authStore.pat || undefined }),
+      });
+      const data = await res.json();
+      console.log('[Dashboard] query response:', data.output?.type, '| issues:', data.output?.issues?.length);
+
+      if (data.output?.type === 'jql' && data.output.issues?.length) {
+        // Use shared utility - no need to worry about chart_spec format
+        const dim = dimensions[chartId] || 'status';
+        const aggData = await aggregateIssues(
+          data.output.issues,
+          {
+            chartType: chartId === 'pie' ? 'pie' : 'bar',
+            xField: dim,
+          },
+          authStore.pat || undefined
+        );
+
+        console.log('[Dashboard] aggregate response:', aggData.chart_type, '| pie_data:', !!aggData.pie_data, '| series:', aggData.series?.length);
+        dashboardStore.setResult(chartId, aggData, data.output.issues);
+      } else {
+        dashboardStore.setLoading(chartId, false);
+      }
+    } catch (err) {
+      console.error('[Dashboard] Query failed:', err);
+      dashboardStore.setLoading(chartId, false);
+    }
+  }
+
+  function handleDimensionChange(chartId: string, value: string): void {
+    dimensions[chartId] = value;
+
+    // If we already have issues for this chart, re-aggregate with the new dimension
+    const chartData = dashboardStore.getChartData(chartId);
+    if (chartData?.issues?.length) {
+      reAggregate(chartId, chartData.issues, value);
+    }
+  }
+
+  async function reAggregate(chartId: string, issues: ApiIssue[], dim: string): Promise<void> {
+    dashboardStore.setLoading(chartId, true);
+    try {
+      const aggData = await aggregateIssues(
+        issues,
+        {
+          chartType: chartId === 'pie' ? 'pie' : 'bar',
+          xField: dim,
+        },
+        authStore.pat || undefined
+      );
+      dashboardStore.setResult(chartId, aggData, issues);
+    } catch (err) {
+      console.error('[Dashboard] re-aggregate failed:', err);
+      dashboardStore.setLoading(chartId, false);
+    }
+  }
 </script>
 
 <div class="dash-simple">
   <main class="charts-row">
-    <!-- Pie Chart -->
-    <div class="chart-card">
-      <div class="card-header">
-        <span class="card-title">Pie Chart</span>
-        <select bind:value={pieDimension} onmousedown={(e) => e.stopPropagation()}>
-          {#each PIE_DIMENSIONS as d}<option value={d.value}>{d.label}</option>{/each}
-        </select>
-      </div>
-      <div class="chart-area">
-        <ChartRenderer option={pieOption} height="320px" />
-      </div>
-    </div>
-
-    <!-- Bar Chart -->
-    <div class="chart-card">
-      <div class="card-header">
-        <span class="card-title">Bar Chart</span>
-        <select bind:value={barXAxis} onmousedown={(e) => e.stopPropagation()}>
-          {#each BAR_X_OPTIONS as o}<option value={o.value}>{o.label}</option>{/each}
-        </select>
-      </div>
-      <div class="chart-area">
-        <ChartRenderer option={barOption} height="320px" />
-      </div>
-    </div>
+    {#each DASHBOARD_CHARTS as cfg}
+      <ChartCard
+        config={cfg}
+        dimension={dimensions[cfg.id] ?? cfg.defaultDimension ?? ''}
+        onDimensionChange={(v) => handleDimensionChange(cfg.id, v)}
+        onQuery={(q) => triggerQuery(cfg.id, q)}
+      />
+    {/each}
   </main>
 </div>
 
@@ -97,47 +172,6 @@
     grid-template-columns: 1fr 1fr;
     gap: 16px;
     height: calc(100vh - 80px);
-  }
-
-  .chart-card {
-    background: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 8px;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .card-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 12px;
-  }
-
-  .card-title {
-    font-size: 14px;
-    font-weight: 500;
-    color: #e6edf3;
-  }
-
-  select {
-    background: #0d1117;
-    border: 1px solid #30363d;
-    color: #8b949e;
-    font-size: 12px;
-    padding: 4px 8px;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-
-  select:hover {
-    border-color: #484f58;
-  }
-
-  .chart-area {
-    flex: 1;
-    min-height: 0;
   }
 
   @media (max-width: 768px) {
