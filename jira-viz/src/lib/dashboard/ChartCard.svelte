@@ -5,15 +5,29 @@
   import { LineChart, TrendChart } from '../charts/specBuilder.js';
   import type { AggregateResponse } from '../charts/chartStore.svelte.js';
   import type { ApiIssue } from '../charts/chartStore.svelte.js';
+  import SegmentedControl from './SegmentedControl.svelte';
 
   interface Props {
     config: ChartConfig;
     dimension: string;
+    secondaryDimension?: string;
+    selectedSeries?: string[];
     onDimensionChange: (val: string) => void;
+    onSecondaryChange?: (val: string) => void;
+    onSeriesChange?: (val: string, checked: boolean) => void;
     onQuery: (query: string) => void;
   }
 
-  let { config, dimension, onDimensionChange, onQuery }: Props = $props();
+  let {
+    config,
+    dimension,
+    secondaryDimension = '',
+    selectedSeries = [],
+    onDimensionChange,
+    onSecondaryChange,
+    onSeriesChange,
+    onQuery,
+  }: Props = $props();
 
   const chartData = $derived(dashboardStore.charts[config.id]);
   const hasData = $derived(!!chartData?.result);
@@ -25,9 +39,15 @@
   const chartOption = $derived.by(() => {
     const result = chartData?.result;
 
-    // For trend, use TrendChart class (same as AI view)
+    // For trend, use TrendChart class with configurable options
     if (config.type === 'trend' && rawIssues.length > 0) {
-      return new TrendChart(rawIssues, { title: config.title, animation: true }).build();
+      return new TrendChart(rawIssues, {
+        title: config.title,
+        animation: true,
+        timeField: dimension as 'created' | 'resolutiondate' | 'updated',
+        breakdownField: secondaryDimension as 'status' | 'priority' | 'assignee' | 'issuetype' | '',
+        seriesToShow: selectedSeries,
+      }).build();
     }
 
     // For line chart - use LineChart class with proper series support
@@ -88,7 +108,13 @@
 <div class="chart-card">
   <div class="card-header">
     <span class="card-title">{config.title}</span>
-    {#if config.options}
+    {#if config.options && config.type === 'line'}
+      <SegmentedControl
+        options={config.options}
+        value={dimension}
+        onChange={onDimensionChange}
+      />
+    {:else if config.options && config.type !== 'trend'}
       <select
         value={dimension}
         onchange={(e) => onDimensionChange(e.currentTarget.value)}
@@ -99,7 +125,34 @@
         {/each}
       </select>
     {/if}
+    {#if config.type === 'trend' && config.secondaryOptions}
+      <select
+        value={secondaryDimension}
+        onchange={(e) => onSecondaryChange?.(e.currentTarget.value)}
+        onmousedown={(e) => e.stopPropagation()}
+        class="secondary-select"
+      >
+        {#each config.secondaryOptions as opt}
+          <option value={opt.value}>{opt.label}</option>
+        {/each}
+      </select>
+    {/if}
   </div>
+
+  {#if config.type === 'trend' && config.seriesOptions}
+    <div class="series-toggles">
+      {#each config.seriesOptions as opt}
+        <label class="series-toggle">
+          <input
+            type="checkbox"
+            checked={selectedSeries.includes(opt.value)}
+            onchange={(e) => onSeriesChange?.(opt.value, e.currentTarget.checked)}
+          />
+          <span>{opt.label}</span>
+        </label>
+      {/each}
+    </div>
+  {/if}
 
   <div class="query-row">
     <input
@@ -162,6 +215,35 @@
 
   select:hover {
     border-color: #484f58;
+  }
+
+  .secondary-select {
+    margin-left: auto;
+  }
+
+  .series-toggles {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .series-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: clamp(9px, 1vw, 11px);
+    color: #8b949e;
+    cursor: pointer;
+  }
+
+  .series-toggle input {
+    accent-color: #818cf8;
+    cursor: pointer;
+  }
+
+  .series-toggle span {
+    user-select: none;
   }
 
   .query-row {

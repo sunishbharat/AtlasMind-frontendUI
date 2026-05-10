@@ -19,6 +19,7 @@
     buildGroupedTrend,
     autoDetectGroupField,
     buildPie,
+    TrendChart,
   } from "./specBuilder.js";
   import {
     BASE_OPTION,
@@ -62,6 +63,24 @@
 
   // - Axis selector state ------------------------------------------------------
   const CHART_TYPES = ["bar", "stacked_bar", "pie", "line", "scatter", "trend"];
+
+  // - Trend chart options -------------------------------------------------------
+  const TREND_BREAKDOWN = [
+    { value: "", label: "None" },
+    { value: "status", label: "Status" },
+    { value: "priority", label: "Priority" },
+    { value: "assignee", label: "Assignee" },
+    { value: "issuetype", label: "Type" },
+  ];
+
+  const TREND_SERIES = [
+    { value: "open", label: "Open" },
+    { value: "created", label: "Created" },
+    { value: "resolved", label: "Resolved" },
+  ];
+
+  let trendBreakdown = $state("");
+  let trendSeries = $state<string[]>(["open", "created", "resolved"]);
 
   const allFields = $derived.by((): string[] => {
     const fromDisplay = chartStore.data?.display_fields ?? [];
@@ -802,6 +821,23 @@
       features.charts.animation,
     );
 
+    // Use TrendChart class directly for trend type (configurable breakdown/series)
+    if (axisType === "trend" && issues.length > 0) {
+      const trendOption = new TrendChart(issues, {
+        title: "Issue Trend",
+        animation: features.charts.animation,
+        breakdownField: trendBreakdown as "" | "status" | "priority" | "assignee" | "issuetype",
+        seriesToShow: trendSeries,
+      }).build();
+
+      if (trendOption) {
+        return {
+          explicit: { label: "Trend", icon: "trend", option: trendOption },
+          ...auto,
+        };
+      }
+    }
+
     // Aggregated result from axis selectors takes highest priority
     if (aggregatedOption) {
       const label =
@@ -1437,6 +1473,61 @@
                   </div>
                 {/if}
               </div>
+
+              <!-- Trend chart options -->
+              {#if axisType === "trend"}
+                <div class="cv-col-filter cv-axis-sel">
+                  <button
+                    class="cv-react-btn"
+                    onclick={() => {
+                      openAxisMenu = openAxisMenu === "trendBreakdown" ? null : "trendBreakdown";
+                    }}
+                    title="Select breakdown"
+                  >
+                    {trendBreakdown || "Breakdown"}
+                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                      <path d="M1.5 3l2.5 2.5L6.5 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+                    </svg>
+                  </button>
+                  {#if openAxisMenu === "trendBreakdown"}
+                    <div class="col-filter-menu cv-axis-menu">
+                      <div class="col-filter-head">Breakdown</div>
+                      <div class="col-filter-list">
+                        {#each TREND_BREAKDOWN as opt}
+                          <button
+                            class="col-filter-item"
+                            class:checked={trendBreakdown === opt.value}
+                            onclick={() => {
+                              trendBreakdown = opt.value;
+                              openAxisMenu = null;
+                            }}
+                          >
+                            <span class="col-filter-val">{opt.label}</span>
+                          </button>
+                        {/each}
+                      </div>
+                    </div>
+                  {/if}
+                </div>
+                <div class="cv-trend-series">
+                  {#each TREND_SERIES as opt}
+                    <label class="cv-trend-toggle">
+                      <input
+                        type="checkbox"
+                        checked={trendSeries.includes(opt.value)}
+                        onchange={(e) => {
+                          if (e.currentTarget.checked) {
+                            trendSeries = [...trendSeries, opt.value];
+                          } else {
+                            trendSeries = trendSeries.filter(s => s !== opt.value);
+                          }
+                        }}
+                      />
+                      <span>{opt.label}</span>
+                    </label>
+                  {/each}
+                </div>
+              {/if}
 
               {#if chartStore.aggregating}
                 <span class="cv-agg-spinner" title="Aggregating…">↻</span>
@@ -2781,6 +2872,30 @@
     left: 0;
     transform: none;
     min-width: 180px;
+  }
+
+  .cv-trend-series {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .cv-trend-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 11px;
+    color: #8b949e;
+    cursor: pointer;
+  }
+
+  .cv-trend-toggle input {
+    accent-color: #818cf8;
+    cursor: pointer;
+  }
+
+  .cv-trend-toggle span {
+    user-select: none;
   }
 
   .cv-agg-spinner {

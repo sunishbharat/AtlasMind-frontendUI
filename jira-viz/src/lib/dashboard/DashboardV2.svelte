@@ -34,6 +34,23 @@
     { value: 'updated', label: 'Updated' },
   ];
 
+  // - Trend chart breakdown options -------------------------------------------
+  type BreakdownField = 'status' | 'priority' | 'assignee' | 'issuetype' | '';
+  const TREND_BREAKDOWN: { value: BreakdownField; label: string }[] = [
+    { value: '', label: 'None' },
+    { value: 'status', label: 'Status' },
+    { value: 'priority', label: 'Priority' },
+    { value: 'assignee', label: 'Assignee' },
+    { value: 'issuetype', label: 'Type' },
+  ];
+
+  // - Trend chart series options ---------------------------------------------
+  const TREND_SERIES = [
+    { value: 'open', label: 'Open (cumulative)' },
+    { value: 'created', label: 'Created' },
+    { value: 'resolved', label: 'Resolved' },
+  ];
+
   // - Mock data ----------------------------------------------------------------
   const MOCK_PIE: Record<Dimension, [string, number][]> = {
     status: [['Open', 124], ['In Progress', 89], ['Resolved', 58], ['Closed', 13]],
@@ -100,8 +117,10 @@
       id: 'trend',
       title: 'Trend Chart',
       type: 'trend',
-      defaultDimension: 'created',
-      options: LINE_DIMENSIONS,
+      // No time field dropdown - uses created by default
+      secondaryOptions: TREND_BREAKDOWN,
+      seriesOptions: TREND_SERIES,
+      defaultSeries: ['open', 'created', 'resolved'],
       builder: trendBuilder,
       mockData: MOCK_LINE as Record<string, [string, number][]>,
     },
@@ -109,12 +128,18 @@
 
   // - State per chart ---------------------------------------------------------
   const dimensions = $state<Record<string, string>>({});
+  const trendBreakdowns = $state<Record<string, string>>({});
+  const trendSeries = $state<Record<string, string[]>>({});
 
   // Initialize dimensions from config
   $effect(() => {
     for (const cfg of DASHBOARD_CHARTS) {
       if (cfg.defaultDimension && !(cfg.id in dimensions)) {
         dimensions[cfg.id] = cfg.defaultDimension;
+      }
+      // Initialize trend chart series defaults
+      if (cfg.id === 'trend' && cfg.defaultSeries && !(cfg.id in trendSeries)) {
+        trendSeries[cfg.id] = [...cfg.defaultSeries];
       }
     }
   });
@@ -184,6 +209,29 @@
     }
   }
 
+  function handleBreakdownChange(chartId: string, value: string): void {
+    trendBreakdowns[chartId] = value;
+    // Re-render with new breakdown
+    const chartData = dashboardStore.getChartData(chartId);
+    if (chartData?.issues?.length) {
+      dashboardStore.setResult(chartId, chartData.result, chartData.issues);
+    }
+  }
+
+  function handleSeriesChange(chartId: string, value: string, checked: boolean): void {
+    const current = trendSeries[chartId] ?? ['open', 'created', 'resolved'];
+    if (checked && !current.includes(value)) {
+      trendSeries[chartId] = [...current, value];
+    } else if (!checked) {
+      trendSeries[chartId] = current.filter(s => s !== value);
+    }
+    // Trigger re-render
+    const chartData = dashboardStore.getChartData(chartId);
+    if (chartData?.issues?.length) {
+      dashboardStore.setResult(chartId, chartData.result, chartData.issues);
+    }
+  }
+
   async function reAggregate(chartId: string, issues: ApiIssue[], dim: string): Promise<void> {
     dashboardStore.setLoading(chartId, true);
     try {
@@ -213,7 +261,11 @@
         <ChartCard
           config={cfg}
           dimension={dimensions[cfg.id] ?? cfg.defaultDimension ?? ''}
+          secondaryDimension={trendBreakdowns[cfg.id] ?? ''}
+          selectedSeries={trendSeries[cfg.id] ?? cfg.defaultSeries ?? []}
           onDimensionChange={(v) => handleDimensionChange(cfg.id, v)}
+          onSecondaryChange={(v) => handleBreakdownChange(cfg.id, v)}
+          onSeriesChange={(v, checked) => handleSeriesChange(cfg.id, v, checked)}
           onQuery={(q) => triggerQuery(cfg.id, q)}
         />
       </div>

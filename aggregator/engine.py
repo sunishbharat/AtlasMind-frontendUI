@@ -48,7 +48,7 @@ _BUCKET_FREQ_OFFSET = {
     "week":    "W-MON",
     "month":   "ME",
     "quarter": "QE",
-    "year":    "Y-DEC",
+    "year":    "YE-DEC",
 }
 
 

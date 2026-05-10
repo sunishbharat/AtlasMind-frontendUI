@@ -380,8 +380,9 @@ export class TrendChart {
     title?: string;
     animation?: boolean;
     forceBucket?: BucketType;
-    createdField?: string;
-    resolvedField?: string;
+    timeField?: 'created' | 'resolutiondate' | 'updated';
+    breakdownField?: '' | 'status' | 'priority' | 'assignee' | 'issuetype';
+    seriesToShow?: string[];
   };
 
   constructor(
@@ -390,16 +391,18 @@ export class TrendChart {
       title?: string;
       animation?: boolean;
       forceBucket?: BucketType;
-      createdField?: string;
-      resolvedField?: string;
+      timeField?: 'created' | 'resolutiondate' | 'updated';
+      breakdownField?: '' | 'status' | 'priority' | 'assignee' | 'issuetype';
+      seriesToShow?: string[];
     } = {}
   ) {
     this.issues = issues;
     this.options = {
       title: 'Issue Trend',
       animation: true,
-      createdField: 'created',
-      resolvedField: 'resolutiondate',
+      timeField: 'created',
+      breakdownField: '',
+      seriesToShow: ['open', 'created', 'resolved'],
       ...options,
     };
   }
@@ -436,10 +439,15 @@ export class TrendChart {
 
   /** Build and return ECharts option */
   build(): EChartsOption | null {
-    const { title, animation, forceBucket, createdField, resolvedField } = this.options;
+    const { title, animation, forceBucket, timeField, breakdownField, seriesToShow } = this.options;
 
+    const timeFieldKey = timeField || 'created';
+    const seriesSet = seriesToShow || ['open', 'created', 'resolved'];
+    const breakdown = breakdownField || '';
+
+    // Get dates for the selected time field
     const allDates = this.issues
-      .map(i => parseDate(i[createdField as keyof ApiIssue]))
+      .map(i => parseDate(i[timeFieldKey as keyof ApiIssue]))
       .filter((d): d is Date => d !== null);
 
     if (!allDates.length) return null;
@@ -449,35 +457,63 @@ export class TrendChart {
       new Date(Math.max(...allDates.map(d => d.getTime())))
     );
 
-    const created = bucketByDate(this.issues, createdField as string, bucket);
-    if (created.length < 2) return null;
+    const timeBuckets = bucketByDate(this.issues, timeFieldKey, bucket);
+    if (timeBuckets.length < 2) return null;
 
-    const labels = created.map(b => b.label);
+    const labels = timeBuckets.map(b => b.label);
+
+    // Handle breakdown mode (multi-series by status/priority/assignee/issuetype)
+    if (breakdown) {
+      return this.buildBreakdownChart(labels, timeBuckets, bucket, breakdown, seriesSet);
+    }
+
+    // Default mode: Open, Created, Resolved
+    const resolvedField = 'resolutiondate';
     const hasResolved = this.issues.some(i => parseDate(i[resolvedField as keyof ApiIssue]));
     const resolvedMap = new Map<string, number>();
 
     if (hasResolved) {
-      bucketByDate(this.issues, resolvedField as string, bucket).forEach(b => resolvedMap.set(b.label, b.count));
+      bucketByDate(this.issues, resolvedField, bucket).forEach(b => resolvedMap.set(b.label, b.count));
     }
 
     let cumCreated = 0, cumResolved = 0;
     const openData = labels.map(l => {
-      cumCreated += created.find(b => b.label === l)?.count ?? 0;
+      const createdCount = timeBuckets.find(b => b.label === l)?.count ?? 0;
+      cumCreated += createdCount;
       cumResolved += resolvedMap.get(l) ?? 0;
       return cumCreated - cumResolved;
     });
-    const createdData = created.map(b => b.count);
+    const createdData = timeBuckets.map(b => b.count);
     const resolvedData = hasResolved ? labels.map(l => resolvedMap.get(l) ?? 0) : null;
 
-    const series = [
-      {
+    const series: EChartsOption['series'] = [];
+
+    // Open (cumulative) - line
+    if (seriesSet.includes('open')) {
+      series.push({
         name: 'Open (cumulative)', type: 'line', data: openData, smooth: true, symbol: 'none',
         lineStyle: { color: '#818cf8', width: 2 },
         areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(129,140,248,0.25)' }, { offset: 1, color: 'rgba(129,140,248,0.02)' }] } },
-      },
-      { name: 'Created', type: 'bar', data: createdData, barMaxWidth: 20, itemStyle: { color: 'rgba(129,140,248,0.4)' }, label: { show: labels.length <= 15, position: 'top' as const, color: '#e2e8f0', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV } },
-      ...(resolvedData ? [{ name: 'Resolved', type: 'bar', data: resolvedData, barMaxWidth: 20, itemStyle: { color: 'rgba(52,211,153,0.5)' }, label: { show: labels.length <= 15, position: 'top' as const, color: '#e2e8f0', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV } }] : []),
-    ];
+      });
+    }
+
+    // Created - bar
+    if (seriesSet.includes('created')) {
+      series.push({
+        name: 'Created', type: 'bar', data: createdData, barMaxWidth: 20,
+        itemStyle: { color: 'rgba(129,140,248,0.4)' },
+        label: { show: labels.length <= 15, position: 'top' as const, color: '#e2e8f0', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV },
+      });
+    }
+
+    // Resolved - bar
+    if (seriesSet.includes('resolved') && resolvedData) {
+      series.push({
+        name: 'Resolved', type: 'bar', data: resolvedData, barMaxWidth: 20,
+        itemStyle: { color: 'rgba(52,211,153,0.5)' },
+        label: { show: labels.length <= 15, position: 'top' as const, color: '#e2e8f0', fontSize: 9, fontFamily: 'Inter, system-ui, sans-serif', formatter: fmtV },
+      });
+    }
 
     const axisLabel = { color: '#94a3b8', fontSize: 10, rotate: labels.length > 10 ? 30 : 0, interval: Math.max(0, Math.floor(labels.length / 8) - 1) };
 
@@ -486,6 +522,77 @@ export class TrendChart {
       tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis' },
       legend: { show: true, top: 24, right: 6, textStyle: { color: '#94a3b8', fontSize: 10 }, icon: 'circle', itemWidth: 8, itemHeight: 8 },
       title: { text: title, textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
+      xAxis: { type: 'category', data: labels, axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel, splitLine: { show: false } },
+      yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#94a3b8', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } }, minInterval: 1 },
+      series,
+      grid: { ...BASE_OPTION.grid as object, top: 52 },
+    };
+  }
+
+  /** Build multi-series breakdown chart (by status/priority/assignee/issuetype) */
+  private buildBreakdownChart(
+    labels: string[],
+    _timeBuckets: { label: string; count: number }[],
+    bucket: BucketType,
+    breakdown: string,
+    seriesSet: string[]
+  ): EChartsOption | null {
+    const { title, animation, timeField } = this.options;
+    const timeFieldKey = timeField || 'created';
+
+    // Group issues by breakdown field value
+    const breakdownValues = new Set<string>();
+    const issuesByValue = new Map<string, ApiIssue[]>();
+
+    for (const issue of this.issues) {
+      const value = String(issue[breakdown as keyof ApiIssue] ?? 'Unknown');
+      breakdownValues.add(value);
+      if (!issuesByValue.has(value)) issuesByValue.set(value, []);
+      issuesByValue.get(value)!.push(issue);
+    }
+
+    // Build series for each breakdown value
+    const series: EChartsOption['series'] = [];
+    const colors = ['#818cf8', '#34d399', '#f472b6', '#fbbf24', '#60a5fa', '#a78bfa', '#fb923c', '#2dd4bf'];
+
+    let colorIdx = 0;
+    for (const [value, issues] of issuesByValue) {
+      // Compute time buckets for this breakdown value
+      const buckets = bucketByDate(issues, timeFieldKey, bucket);
+      const data = labels.map(label => {
+        const b = buckets.find(b => b.label === label);
+        return b?.count ?? 0;
+      });
+
+      // Created bar for this breakdown value
+      if (seriesSet.includes('created')) {
+        series.push({
+          name: value, type: 'bar', data,
+          itemStyle: { color: colors[colorIdx % colors.length] },
+          barMaxWidth: 20,
+        });
+      }
+
+      // Cumulative line for this breakdown value
+      if (seriesSet.includes('open')) {
+        let cum = 0;
+        const cumData = data.map(d => { cum += d; return cum; });
+        series.push({
+          name: `${value} (cumulative)`, type: 'line', data: cumData, smooth: true, symbol: 'none',
+          lineStyle: { color: colors[colorIdx % colors.length], width: 2 },
+        });
+      }
+
+      colorIdx++;
+    }
+
+    const axisLabel = { color: '#94a3b8', fontSize: 10, rotate: labels.length > 10 ? 30 : 0, interval: Math.max(0, Math.floor(labels.length / 8) - 1) };
+
+    return {
+      ...BASE_OPTION, animation,
+      tooltip: { ...BASE_OPTION.tooltip as object, trigger: 'axis' },
+      legend: { show: true, top: 24, right: 6, textStyle: { color: '#94a3b8', fontSize: 10 }, icon: 'circle', itemWidth: 8, itemHeight: 8 },
+      title: { text: `${title} by ${breakdown}`, textStyle: { color: '#cbd5e1', fontSize: 12, fontWeight: 600 }, top: 4, left: 6 },
       xAxis: { type: 'category', data: labels, axisLine: { lineStyle: { color: '#1e293b' } }, axisTick: { show: false }, axisLabel, splitLine: { show: false } },
       yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#94a3b8', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } }, minInterval: 1 },
       series,

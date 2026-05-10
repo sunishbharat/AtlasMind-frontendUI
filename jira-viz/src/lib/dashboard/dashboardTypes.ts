@@ -11,9 +11,14 @@ export interface ChartData {
 export interface ChartConfig {
   id: string;
   title: string;
-  type: 'pie' | 'bar' | 'line' | 'area';
+  type: 'pie' | 'bar' | 'line' | 'trend';
   defaultDimension?: string;
   options?: { value: string; label: string }[];
+  // For trend chart: secondary options (breakdown fields)
+  secondaryOptions?: { value: string; label: string }[];
+  // For trend chart: series toggles
+  seriesOptions?: { value: string; label: string }[];
+  defaultSeries?: string[];
   builder: (data: [string, number][], dim: string, maxItems?: number, gradient?: boolean) => object;
   mockData?: Record<string, [string, number][]>;
 }
