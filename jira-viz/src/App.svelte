@@ -3,19 +3,19 @@
   import LandingPage from './lib/LandingPage.svelte';
   import JiraViz from './lib/JiraViz.svelte';
 
-  let currentRoute = $state('/');
+  let currentPath = $state('/');
 
   onMount(() => {
-    // Check initial hash
-    currentRoute = window.location.hash.replace('#', '') || '/';
+    currentPath = window.location.pathname;
 
-    // Listen for hash changes
-    window.addEventListener('hashchange', () => {
-      currentRoute = window.location.hash.replace('#', '') || '/';
+    window.addEventListener('popstate', () => {
+      currentPath = window.location.pathname;
     });
   });
 
-  const isDashboard = $derived(currentRoute === '/dashboard' || currentRoute.startsWith('/dashboard'));
+  const isDashboard = $derived(
+    __TESTING__ || currentPath.startsWith('/demo') || currentPath.startsWith('/live')
+  );
 </script>
 
 {#if isDashboard}

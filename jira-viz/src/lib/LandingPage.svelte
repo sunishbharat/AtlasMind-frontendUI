@@ -74,8 +74,8 @@
   });
 
   function goToDashboard() {
-    window.location.hash = '#/dashboard';
-    window.location.reload();
+    history.pushState(null, '', '/live');
+    window.dispatchEvent(new PopStateEvent('popstate'));
   }
 </script>
 
