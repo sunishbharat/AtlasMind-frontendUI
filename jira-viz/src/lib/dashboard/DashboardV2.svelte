@@ -6,19 +6,13 @@
   import { aggregateIssues } from './aggregateUtils.js';
   import type { ChartConfig } from './dashboardTypes.js';
   import type { ApiIssue } from '../charts/chartStore.svelte.js';
-  import { chartStore } from '../charts/index.js';
 
   // - Types --------------------------------------------------------------------
   type Dimension = 'status' | 'priority' | 'assignee' | 'project' | 'issuetype';
   type TimeField = 'created' | 'resolutiondate' | 'updated';
 
-  // - Dynamic field options from backend ----------------------------------------
-  // Derive available fields from the last AI query response
-  const availableFields = $derived(chartStore.data?.display_fields ?? []);
-  const availableFieldSet = $derived(new Set(availableFields.map(f => f.toLowerCase())));
-
-  // Map backend fields to our dimension keys
-  const FIELD_TO_DIMENSION: Record<string, Dimension> = {
+  // Map backend fields to our dimension keys (like ChartView)
+  const FIELD_TO_DIMENSION: Record<string, string> = {
     'status': 'status',
     'priority': 'priority',
     'assignee': 'assignee',
@@ -27,21 +21,25 @@
     'issue type': 'issuetype',
   };
 
-  const TIME_FIELDS = ['created', 'resolved', 'updated', 'resolutiondate'];
-  const timeFieldOptions = $derived(
-    availableFields
-      .filter(f => TIME_FIELDS.includes(f.toLowerCase()))
-      .map(f => ({ value: f.toLowerCase() as TimeField, label: f }))
-  );
-
-  const trendBreakdownOptions = $derived(
-    availableFields
-      .filter(f => FIELD_TO_DIMENSION[f.toLowerCase()])
-      .map(f => ({
-        value: FIELD_TO_DIMENSION[f.toLowerCase()],
-        label: f
-      }))
-  );
+  // Derive categorical fields from issues (cardinality 2-15 for good grouping)
+  function deriveCategoricalFields(issues: ApiIssue[]): { value: string; label: string }[] {
+    if (!issues.length) return [];
+    const fields: { value: string; label: string }[] = [];
+    const skipFields = new Set(['key', 'summary', 'description', 'id', 'url', 'link']);
+    for (const key of Object.keys(issues[0])) {
+      if (skipFields.has(key.toLowerCase())) continue;
+      const sample = issues.find((i) => i[key] != null)?.[key];
+      // Skip numeric fields
+      if (sample != null && !isNaN(Number(sample))) continue;
+      const uniqueCount = new Set(
+        issues.slice(0, 100).map((i) => String(i[key] ?? '')).filter(Boolean)
+      ).size;
+      if (uniqueCount >= 2 && uniqueCount <= 15) {
+        fields.push({ value: key.toLowerCase(), label: key });
+      }
+    }
+    return fields;
+  }
 
   // - Dropdown options ---------------------------------------------------------
   const PIE_DIMENSIONS: { value: Dimension; label: string }[] = [
@@ -68,7 +66,6 @@
 
   // - Trend chart breakdown options (dynamic from backend fields) ---------------
   type BreakdownField = 'status' | 'priority' | 'assignee' | 'issuetype' | '';
-  // Default fallback options when no backend fields available
   const DEFAULT_TREND_BREAKDOWN: { value: BreakdownField; label: string }[] = [
     { value: '', label: 'None' },
     { value: 'status', label: 'Status' },
@@ -77,11 +74,17 @@
     { value: 'issuetype', label: 'Type' },
   ];
 
-  const trendBreakdownOptions$ = $derived(
-    trendBreakdownOptions.length > 0
-      ? [{ value: '' as BreakdownField, label: 'None' }, ...trendBreakdownOptions.map(o => ({ value: o.value as BreakdownField, label: o.label }))]
-      : DEFAULT_TREND_BREAKDOWN
-  );
+  // Dynamic trend options - will be populated from query response
+  let trendBreakdownOptions$ = $state<{ value: string; label: string }[]>(DEFAULT_TREND_BREAKDOWN);
+
+  // Dynamic bar options - populated from display_fields after query
+  let barDimensionOptions$ = $state<{ value: string; label: string }[]>(BAR_X_OPTIONS);
+
+  // Dynamic pie options - populated from display_fields after query
+  let pieDimensionOptions$ = $state<{ value: string; label: string }[]>(PIE_DIMENSIONS);
+
+  // Dynamic line options - populated from display_fields after query
+  let lineDimensionOptions$ = $state<{ value: string; label: string }[]>(LINE_DIMENSIONS);
 
   // - Trend chart series options ---------------------------------------------
   const DEFAULT_TREND_SERIES = [
@@ -156,7 +159,6 @@
       id: 'trend',
       title: 'Trend Chart',
       type: 'trend',
-      // secondaryOptions will be overridden at render time with dynamic options
       secondaryOptions: DEFAULT_TREND_BREAKDOWN,
       seriesOptions: DEFAULT_TREND_SERIES,
       defaultSeries: ['open', 'created', 'resolved'],
@@ -176,7 +178,6 @@
       if (cfg.defaultDimension && !(cfg.id in dimensions)) {
         dimensions[cfg.id] = cfg.defaultDimension;
       }
-      // Initialize trend chart series defaults
       if (cfg.id === 'trend' && cfg.defaultSeries && !(cfg.id in trendSeries)) {
         trendSeries[cfg.id] = [...cfg.defaultSeries];
       }
@@ -213,10 +214,42 @@
         const chartType = getChartType(chartId);
         const issues = data.output.issues;
 
-        // For line charts, add colorField to get multi-line (grouped by status)
+        // Update trend breakdown options from display_fields
+        const displayFields = data.output.display_fields || [];
+        const trendOpts = displayFields
+          .filter(f => FIELD_TO_DIMENSION[f.toLowerCase()])
+          .map(f => ({ value: FIELD_TO_DIMENSION[f.toLowerCase()], label: f }));
+        if (trendOpts.length > 0) {
+          trendBreakdownOptions$ = [{ value: '', label: 'None' }, ...trendOpts];
+        }
+
+        // Update bar options from issues (derive categorical fields by cardinality)
+        const barOpts = deriveCategoricalFields(issues);
+        if (barOpts.length > 0) {
+          barDimensionOptions$ = barOpts;
+        }
+
+        // Update pie options from display_fields
+        const pieOpts = displayFields
+          .filter(f => FIELD_TO_DIMENSION[f.toLowerCase()])
+          .map(f => ({ value: FIELD_TO_DIMENSION[f.toLowerCase()], label: f }));
+        if (pieOpts.length > 0) {
+          pieDimensionOptions$ = pieOpts;
+        }
+
+        // Update line options from display_fields (time fields)
+        const timeFields = ['created', 'resolved', 'updated', 'resolutiondate'];
+        const lineOpts = displayFields
+          .filter(f => timeFields.includes(f.toLowerCase()))
+          .map(f => ({ value: f.toLowerCase(), label: f }));
+        if (lineOpts.length > 0) {
+          lineDimensionOptions$ = lineOpts;
+        }
+
         const aggOptions = {
           chartType,
           xField: dim,
+          displayFields,
         };
         if (chartType === 'line') {
           (aggOptions as any).colorField = 'status';
@@ -240,34 +273,22 @@
 
   function handleDimensionChange(chartId: string, value: string): void {
     dimensions[chartId] = value;
-
-    // If we already have issues for this chart, re-aggregate with the new dimension
-    const chartData = dashboardStore.getChartData(chartId);
-    if (chartData?.issues?.length) {
-      reAggregate(chartId, chartData.issues, value);
+    const issues = dashboardStore.charts[chartId]?.issues || [];
+    if (issues.length) {
+      reAggregate(chartId, issues, value);
     }
   }
 
   function handleBreakdownChange(chartId: string, value: string): void {
     trendBreakdowns[chartId] = value;
-    // Re-render with new breakdown
-    const chartData = dashboardStore.getChartData(chartId);
-    if (chartData?.issues?.length) {
-      dashboardStore.setResult(chartId, chartData.result, chartData.issues);
-    }
   }
 
   function handleSeriesChange(chartId: string, value: string, checked: boolean): void {
-    const current = trendSeries[chartId] ?? ['open', 'created', 'resolved'];
+    const current = trendSeries[chartId] || [];
     if (checked && !current.includes(value)) {
       trendSeries[chartId] = [...current, value];
     } else if (!checked) {
-      trendSeries[chartId] = current.filter(s => s !== value);
-    }
-    // Trigger re-render
-    const chartData = dashboardStore.getChartData(chartId);
-    if (chartData?.issues?.length) {
-      dashboardStore.setResult(chartId, chartData.result, chartData.issues);
+      trendSeries[chartId] = current.filter(v => v !== value);
     }
   }
 
@@ -275,13 +296,13 @@
     dashboardStore.setLoading(chartId, true);
     try {
       const chartType = getChartType(chartId);
-      const aggOptions = {
+      const displayFields = (dashboardStore.charts[chartId]?.result as any)?.x_axis || [];
+      const aggOptions: any = {
         chartType,
         xField: dim,
       };
-      // For line charts, add colorField to get multi-line (grouped by status)
       if (chartType === 'line') {
-        (aggOptions as any).colorField = 'status';
+        aggOptions.colorField = 'status';
       }
 
       const aggData = await aggregateIssues(issues, aggOptions, authStore.pat || undefined);
@@ -306,6 +327,11 @@
           onSecondaryChange={(v) => handleBreakdownChange(cfg.id, v)}
           onSeriesChange={(v, checked) => handleSeriesChange(cfg.id, v, checked)}
           onQuery={(q) => triggerQuery(cfg.id, q)}
+          dynamicOptions={
+            cfg.id === 'bar' ? barDimensionOptions$ :
+            cfg.id === 'pie' ? pieDimensionOptions$ :
+            cfg.id === 'line' ? lineDimensionOptions$ : undefined
+          }
           dynamicSecondaryOptions={cfg.id === 'trend' ? trendBreakdownOptions$ : undefined}
         />
       </div>
@@ -332,50 +358,18 @@
     grid-template-rows: repeat(2, 1fr);
     gap: clamp(0.5rem, 1vw, 1rem);
     flex: 1;
-    width: 100%;
-    max-width: 100%;
     min-height: 0;
-    box-sizing: border-box;
   }
 
   .chart-wrapper {
-    width: 100%;
-    min-width: 0;
     min-height: 0;
     display: flex;
-    box-sizing: border-box;
   }
 
-  /* Tablet (< 1024px) */
-  @media (max-width: 1024px) {
-    .charts-grid {
-      gap: 0.75rem;
-    }
-  }
-
-  /* Mobile (< 768px) - single column */
   @media (max-width: 768px) {
-    .dash-container {
-      height: auto;
-      min-height: 400px;
-    }
-
     .charts-grid {
       grid-template-columns: 1fr;
-      grid-template-rows: repeat(4, minmax(150px, 1fr));
-      gap: 0.75rem;
-      min-height: 400px;
-    }
-  }
-
-  /* Small mobile (< 480px) */
-  @media (max-width: 480px) {
-    .dash-container {
-      padding: 0.5rem;
-    }
-
-    .charts-grid {
-      gap: 0.5rem;
+      grid-template-rows: repeat(4, 1fr);
     }
   }
 </style>

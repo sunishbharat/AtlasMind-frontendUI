@@ -172,19 +172,6 @@
     }
   });
 
-  // - CSV upload --------------------------------------------------------------
-  let fileInput: HTMLInputElement;
-  let uploading = $state(false);
-
-  async function onFileChange(e: Event): Promise<void> {
-    const file = (e.target as HTMLInputElement).files?.[0];
-    if (!file) return;
-    uploading = true;
-    await dataStore.loadCSV(file);
-    uploading = false;
-    fileInput.value = "";
-  }
-
   // - Sprint stats (reactive) -----------------------------------------------
   // Get all issues: prefer chartStore (live query) else fall back to dataStore
   const allItemsRaw = $derived(
@@ -308,107 +295,7 @@
         </span>
         <div class="row-sep"></div>
         <div class="data-controls">
-          <div class="data-source">
-            {#if dataStore.csvFilename}
-              <span class="ds-dot ds-dot--file"></span>
-              <svg width="11" height="11" viewBox="0 0 12 12"
-                ><path
-                  d="M2 1h5l3 3v7H2V1z"
-                  stroke="currentColor"
-                  stroke-width="1.2"
-                  fill="none"
-                  stroke-linejoin="round"
-                /><path
-                  d="M7 1v3h3"
-                  stroke="currentColor"
-                  stroke-width="1.2"
-                  fill="none"
-                /></svg
-              >
-              <span class="ds-name">{dataStore.csvFilename}</span>
-              <button
-                class="ds-clear"
-                onclick={() => dataStore.resetToSample()}
-                title="Reset to sample data"
-              >
-                <svg width="9" height="9" viewBox="0 0 9 9"
-                  ><path
-                    d="M1.5 1.5l6 6M7.5 1.5l-6 6"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    stroke-linecap="round"
-                  /></svg
-                >
-              </button>
-            {:else}
-              <span class="ds-dot ds-dot--sample"></span>
-              <span class="ds-name ds-name--sample">Sample data</span>
-            {/if}
-          </div>
-
-          <div class="row-sep"></div>
-
-          <button
-            class="upload-btn"
-            onclick={() => fileInput.click()}
-            disabled={uploading}
-          >
-            {#if uploading}
-              <span class="spinner"></span>
-              Parsing…
-            {:else}
-              <svg width="12" height="12" viewBox="0 0 12 12"
-                ><path
-                  d="M6 8V2M3 5l3-3 3 3"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  fill="none"
-                  stroke-linecap="round"
-                /><path
-                  d="M1 9v1a1 1 0 001 1h8a1 1 0 001-1V9"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  fill="none"
-                  stroke-linecap="round"
-                /></svg
-              >
-              Upload CSV
-            {/if}
-          </button>
-
-          <input
-            bind:this={fileInput}
-            type="file"
-            accept=".csv"
-            style="display:none"
-            onchange={onFileChange}
-          />
         </div>
-
-        {#if dataStore.csvError}
-          <div class="data-error">
-            <svg width="12" height="12" viewBox="0 0 12 12"
-              ><circle
-                cx="6"
-                cy="6"
-                r="5"
-                stroke="#f87171"
-                stroke-width="1.2"
-                fill="none"
-              /><path
-                d="M6 3.5v3M6 8v.5"
-                stroke="#f87171"
-                stroke-width="1.2"
-                stroke-linecap="round"
-              /></svg
-            >
-            <span>{dataStore.csvError}</span>
-            <button
-              class="error-close"
-              onclick={() => (dataStore.csvError = null)}>×</button
-            >
-          </div>
-        {/if}
       </div>
     </div>
   </div>

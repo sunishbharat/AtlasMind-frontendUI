@@ -23,7 +23,9 @@
 | `jira-viz/src/lib/ChatPanel.svelte` | AI chat sidebar. Handles send/cancel, demo vs live mode, parses response type |
 | `jira-viz/src/lib/charts/chartStore.svelte.ts` | Reactive bridge store — ChatPanel writes, ChartView reads |
 | `jira-viz/src/lib/charts/specBuilder.ts` | Converts API issues → ECharts option objects |
+| `jira-viz/src/lib/FieldMetadata.svelte.ts` | Utility class for deriving field metadata (dropdown options) from display_fields and issues |
 | `jira-viz/src/lib/charts/ChartView.svelte` | Tab bar + ECharts renderer. Merges AI spec + auto-generated specs |
+| `jira-viz/src/lib/dashboard/dashboardStore.svelte.ts` | Independent store for DashboardV2 - maintains per-chart state (query, result, loading, issues) |
 | `jira-viz/src/lib/dataStore.svelte.ts` | Holds Jira issues (CSV or sample data). Used by HierarchyView + TableView |
 | `jira-viz/src/lib/state.svelte.ts` | Cross-component hover state (`vizState.hoveredId`) |
 | `auth.py` | Auth helper. Reads `JIRA_PAT` env var; `jira_headers(req.pat)` returns the `X-Jira-Token` header dict forwarded to AtlasMind |
@@ -220,7 +222,21 @@ flowchart LR
 | `lastMeta` | `ServerMeta \| null` | Model name + LLM timeout from latest response |
 | `backendAlive` | `boolean` | Updated by `/api/meta` polling |
 | `hasData` | `boolean` (getter) | `issues.length > 0` — watched by JiraViz to auto-switch tabs |
-| `authStore.pat` | `string` (`auth.svelte.ts`) | PAT store — `isAuthenticated`, `save()`, `clear()` |
+| `aggregated` | `AggregateResponse \| null` | Pre-aggregated chart data from `/api/aggregate` |
+| `field_counts` | `Record<string, Record<string, number>> \| null` | Field value distributions from aggregate |
+
+### `dashboardStore` fields
+
+Independent store for DashboardV2 - queries and aggregates separately from ChartView.
+
+| Field | Type | Purpose |
+|---|---|---|
+| `charts` | `Record<string, ChartData>` | Per-chart state: query, result, loading, issues |
+| `setQuery()` | method | Set query text for a chart |
+| `setResult()` | method | Store aggregate result + issues |
+| `setLoading()` | method | Toggle loading state |
+
+**Key design principle:** `chartStore` and `dashboardStore` are independent. Dashboard queries via its own `/api/query` call and stores results locally. It does NOT sync with `chartStore`. Trend breakdown dropdown updates dynamically from the query response's `display_fields` via local `$state`.
 
 ---
 

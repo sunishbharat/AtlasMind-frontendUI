@@ -7,6 +7,20 @@
   import type { ApiIssue } from '../charts/chartStore.svelte.js';
   import SegmentedControl from './SegmentedControl.svelte';
 
+  // Sample issues for trend chart demo (when no real data)
+  const sampleIssuesForTrend: ApiIssue[] = [
+    { key: 'KAFKA-1', status: 'Closed', priority: 'Major', assignee: 'Alice', created: '2024-01-01', resolutiondate: '2024-01-05' },
+    { key: 'KAFKA-2', status: 'Closed', priority: 'Major', assignee: 'Bob', created: '2024-01-03', resolutiondate: '2024-01-10' },
+    { key: 'KAFKA-3', status: 'Open', priority: 'High', assignee: 'Alice', created: '2024-01-05', resolutiondate: null },
+    { key: 'KAFKA-4', status: 'In Progress', priority: 'Medium', assignee: 'Charlie', created: '2024-01-08', resolutiondate: null },
+    { key: 'KAFKA-5', status: 'Closed', priority: 'High', assignee: 'Bob', created: '2024-01-10', resolutiondate: '2024-01-15' },
+    { key: 'KAFKA-6', status: 'Open', priority: 'Low', assignee: 'Diana', created: '2024-01-12', resolutiondate: null },
+    { key: 'KAFKA-7', status: 'Closed', priority: 'Major', assignee: 'Alice', created: '2024-01-15', resolutiondate: '2024-01-20' },
+    { key: 'KAFKA-8', status: 'In Progress', priority: 'Critical', assignee: 'Charlie', created: '2024-01-18', resolutiondate: null },
+    { key: 'KAFKA-9', status: 'Closed', priority: 'Medium', assignee: 'Bob', created: '2024-01-20', resolutiondate: '2024-01-25' },
+    { key: 'KAFKA-10', status: 'Open', priority: 'High', assignee: 'Diana', created: '2024-01-22', resolutiondate: null },
+  ];
+
   interface Props {
     config: ChartConfig;
     dimension: string;
@@ -17,6 +31,7 @@
     onSeriesChange?: (val: string, checked: boolean) => void;
     onQuery: (query: string) => void;
     // Dynamic options that override config options when available
+    dynamicOptions?: { value: string; label: string }[];
     dynamicSecondaryOptions?: { value: string; label: string }[];
     dynamicSeriesOptions?: { value: string; label: string }[];
   }
@@ -30,6 +45,7 @@
     onSecondaryChange,
     onSeriesChange,
     onQuery,
+    dynamicOptions,
     dynamicSecondaryOptions,
     dynamicSeriesOptions,
   }: Props = $props();
@@ -45,13 +61,23 @@
     const result = chartData?.result;
 
     // For trend, use TrendChart class with configurable options
-    if (config.type === 'trend' && rawIssues.length > 0) {
-      return new TrendChart(rawIssues, {
+    if (config.type === 'trend') {
+      if (rawIssues.length > 0) {
+        return new TrendChart(rawIssues, {
+          title: config.title,
+          animation: true,
+          timeField: dimension as 'created' | 'resolutiondate' | 'updated',
+          breakdownField: secondaryDimension as 'status' | 'priority' | 'assignee' | 'issuetype' | '',
+          seriesToShow: selectedSeries,
+        }).build();
+      }
+      // Fallback to mock data for trend
+      return new TrendChart(sampleIssuesForTrend, {
         title: config.title,
         animation: true,
-        timeField: dimension as 'created' | 'resolutiondate' | 'updated',
-        breakdownField: secondaryDimension as 'status' | 'priority' | 'assignee' | 'issuetype' | '',
-        seriesToShow: selectedSeries,
+        timeField: 'created',
+        breakdownField: '',
+        seriesToShow: ['open', 'created', 'resolved'],
       }).build();
     }
 
@@ -115,7 +141,7 @@
     <span class="card-title">{config.title}</span>
     {#if config.options && config.type === 'line'}
       <SegmentedControl
-        options={config.options}
+        options={dynamicOptions ?? config.options}
         value={dimension}
         onChange={onDimensionChange}
       />
@@ -125,7 +151,7 @@
         onchange={(e) => onDimensionChange(e.currentTarget.value)}
         onmousedown={(e) => e.stopPropagation()}
       >
-        {#each config.options as opt}
+        {#each (dynamicOptions ?? config.options) as opt}
           <option value={opt.value}>{opt.label}</option>
         {/each}
       </select>
