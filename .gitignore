@@ -18,10 +18,9 @@ wheels/
 .DS_Store
 Thumbs.db
 
-# Markdown (exclude all except README.md and docs/)
+# Markdown (exclude all except README.md)
 *.md
 !README.md
-!docs/*.md
 
 # Editor
 .vscode/*
@@ -29,3 +28,8 @@ Thumbs.db
 .idea
 *.suo
 *.sw?
+
+# Block all dot files and directories except the two explicitly allowed
+.*
+!.gitignore
+!.python-version

@@ -33,11 +33,15 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import httpx
 import uvicorn
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+from core.config import settings
+from security import setup_security
+from security.api_key import require_api_key
+from security.rate_limit import limiter
 
 from aggregator.field_map import apply_field_map as _apply_field_map
 from auth import jira_headers as _jira_headers, startup_log as _auth_startup_log
@@ -82,31 +86,39 @@ AGGREGATION_ENABLED: bool = (
     else not _args.no_aggregation
 )
 
-if AGGREGATION_ENABLED:
-    from aggregator import aggregate as _aggregate, AggregateRequest as _AggregateRequest
+# AggregateRequest always imported for route type validation
+from aggregator import AggregateRequest as _AggregateRequest
 
-# CORS origins: default to Vite dev server; override in production
-_default_origins = f"http://{VITE_DEV_HOST}:{VITE_DEV_PORT},http://127.0.0.1:{VITE_DEV_PORT}"
-_raw_origins = os.environ.get("ALLOWED_ORIGINS", _default_origins)
-ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+if AGGREGATION_ENABLED:
+    from aggregator import aggregate as _aggregate
+
+DEBUG = settings.debug
 
 print(f"[AtlasMind] Backend URL  : {ATLASMIND_URL}")
 print(f"[AtlasMind] Listening on : {HOST}:{FRONTEND_PORT}")
+print(f"[AtlasMind] Environment  : {settings.environment}")
 print(f"[AtlasMind] Jira PAT     : {_auth_startup_log()}")
-print(f"[AtlasMind] CORS origins : {ALLOWED_ORIGINS}")
+print(f"[AtlasMind] CORS origins : {settings.allowed_origins}")
 print(f"[AtlasMind] Aggregation  : {'enabled' if AGGREGATION_ENABLED else 'disabled'}")
+print(f"[AtlasMind] Debug mode   : {'ON (OpenAPI schema exposed)' if DEBUG else 'off'}")
+print(f"[AtlasMind] Rate limit   : default={settings.rate_limit_default}  query={settings.rate_limit_query}  agg={settings.rate_limit_aggregate}")
+print(f"[AtlasMind] Body limit   : {settings.max_body_size_bytes // 1024} KB")
+print(f"[AtlasMind] API key auth : {'enabled' if settings.api_key else 'disabled (set API_KEY to enable)'}")
+print(f"[AtlasMind] Rate storage : {settings.rate_limit_storage_uri}")
+if settings.is_production and not settings.api_key:
+    print("[AtlasMind] WARNING: ENVIRONMENT=production but API_KEY is not set.")
 
 DIST_DIR = Path(__file__).parent / "jira-viz" / "dist"
 
 # ── App ───────────────────────────────────────────────────────────────────────
-app = FastAPI(title="AtlasMind Frontend API")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+app = FastAPI(
+    title="AtlasMind Frontend API",
+    docs_url="/docs"            if DEBUG else None,
+    redoc_url="/redoc"          if DEBUG else None,
+    openapi_url="/openapi.json" if DEBUG else None,
 )
+
+setup_security(app)
 
 
 # ── Schema ────────────────────────────────────────────────────────────────────
@@ -124,8 +136,14 @@ class EventRequest(BaseModel):
 
 
 # ── API routes ────────────────────────────────────────────────────────────────
-@app.post("/api/query")
-async def run_query(req: QueryRequest):
+# All /api/* routes except /api/health require a valid X-API-Key header when
+# API_KEY env var is set. Health is exempt so load balancer probes always pass.
+_api = APIRouter(dependencies=[Depends(require_api_key)])
+
+
+@_api.post("/api/query")
+@limiter.limit(settings.rate_limit_query)
+async def run_query(request: Request, req: QueryRequest):
     """Translate a chat query into a GET /query call against the AtlasMind server."""
     params = {"q": req.query}
     if req.request_id:
@@ -177,8 +195,9 @@ async def run_query(req: QueryRequest):
         return {"output": None, "error": str(exc)}
 
 
-@app.post("/api/event")
-async def forward_event(req: EventRequest):
+@_api.post("/api/event")
+@limiter.limit(settings.rate_limit_event)
+async def forward_event(request: Request, req: EventRequest):
     """Forward a client event (cancel, heartbeat) to AtlasMind."""
     try:
         async with httpx.AsyncClient(timeout=5) as client:
@@ -191,8 +210,9 @@ async def forward_event(req: EventRequest):
         return {"request_id": req.request_id, "accepted": False, "detail": str(exc)}
 
 
-@app.post("/api/aggregate")
-async def run_aggregate(req: dict):
+@_api.post("/api/aggregate")
+@limiter.limit(settings.rate_limit_aggregate)
+async def run_aggregate(request: Request, req: _AggregateRequest):
     """Pre-aggregate issues server-side using pandas. Returns chart-ready data.
     Returns 503 when disabled via --no-aggregation or AGGREGATION=false."""
     if not AGGREGATION_ENABLED:
@@ -201,18 +221,18 @@ async def run_aggregate(req: dict):
             content={"error": "Aggregation pipeline disabled. Restart without --no-aggregation to enable."},
         )
     try:
-        parsed = _AggregateRequest(**req)
-        return _aggregate(parsed)
+        return _aggregate(req)
     except Exception as exc:
         return {
-            "error": str(exc), "chart_type": req.get("chart_spec", {}).get("type", ""),
+            "error": str(exc), "chart_type": req.chart_spec.type,
             "x_axis": [], "series": [], "pie_data": None, "scatter_data": None,
             "total_issues": 0, "fields_resolved": {}, "warnings": [str(exc)],
         }
 
 
-@app.get("/api/meta")
-async def meta():
+@_api.get("/api/meta")
+@limiter.limit(settings.rate_limit_meta)
+async def meta(request: Request):
     """Return server metadata (model name, etc.) from AtlasMind."""
     try:
         async with httpx.AsyncClient(timeout=5) as client:
@@ -225,20 +245,30 @@ async def meta():
 
 @app.get("/api/health")
 async def health():
-    """Check this server and whether AtlasMind is reachable."""
+    """Liveness probe - intentionally minimal to avoid leaking internal topology."""
+    return {"status": "ok"}
+
+
+@_api.get("/api/health/debug")
+async def health_debug():
+    """Detailed health check - only available when DEBUG=true."""
+    if not DEBUG:
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
     atlasmind_ok = False
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             atlasmind_ok = (await client.get(f"{ATLASMIND_URL}/health")).is_success
     except Exception:
         pass
-
     return {
         "status":        "ok",
         "atlasmind_url": ATLASMIND_URL,
         "atlasmind_up":  atlasmind_ok,
         "dist_built":    DIST_DIR.exists(),
     }
+
+
+app.include_router(_api)
 
 
 # ── Static UI routes ──────────────────────────────────────────────────────────
@@ -261,6 +291,12 @@ def serve_live(path: str = ""):
 
 if DIST_DIR.exists():
     app.mount("/assets", StaticFiles(directory=DIST_DIR / "assets"), name="assets")
+
+@app.get("/favicon.svg", include_in_schema=False)
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    f = DIST_DIR / "favicon.svg"
+    return FileResponse(f) if f.exists() else JSONResponse(status_code=404, content={})
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

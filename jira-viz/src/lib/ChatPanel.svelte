@@ -53,6 +53,16 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: text, request_id: requestId, pat: authStore.pat || undefined }),
         });
+
+        if (!res.ok) {
+          const elapsed = Date.now() - t0;
+          let errorText = `Request failed (${res.status})`;
+          try { const e = await res.json(); errorText = e.detail ?? e.error ?? errorText; } catch {}
+          messages = [...messages, { role: "assistant", text: `**Error:** ${errorText}`, elapsed, tokenUsage: null }];
+          loading = false;
+          return;
+        }
+
         const data = await res.json();
         const elapsed = Date.now() - t0;
         console.log('[AtlasMind] raw API response:', JSON.stringify(data, null, 2));
