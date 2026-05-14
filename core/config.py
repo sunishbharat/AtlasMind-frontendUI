@@ -1,5 +1,40 @@
+import json
+from typing import Any
+
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic.fields import FieldInfo
+from pydantic_settings import (
+    BaseSettings,
+    DotEnvSettingsSource,
+    EnvSettingsSource,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
+
+
+class _CommaSplitMixin:
+    """Override decode_complex_value to fall back to comma-splitting for non-JSON strings.
+
+    pydantic-settings calls json.loads() on list/dict fields before field validators run,
+    so TRUSTED_PROXY_IPS=127.0.0.1,::1 crashes before the validator gets a chance.
+    This mixin catches the JSONDecodeError and splits by comma instead.
+    """
+
+    def decode_complex_value(self, field_name: str, field: FieldInfo, value: Any) -> Any:
+        try:
+            return super().decode_complex_value(field_name, field, value)  # type: ignore[misc]
+        except (ValueError, json.JSONDecodeError):
+            if isinstance(value, str):
+                return [item.strip() for item in value.split(",") if item.strip()]
+            raise
+
+
+class _CommaSplitEnvSource(_CommaSplitMixin, EnvSettingsSource):
+    pass
+
+
+class _CommaSplitDotEnvSource(_CommaSplitMixin, DotEnvSettingsSource):
+    pass
 
 
 class Settings(BaseSettings):
@@ -33,6 +68,23 @@ class Settings(BaseSettings):
     # App
     environment: str = Field(default="development")
     debug: bool      = Field(default=False)
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        **kwargs: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        secrets = tuple(kwargs.values())
+        return (
+            init_settings,
+            _CommaSplitEnvSource(settings_cls),
+            _CommaSplitDotEnvSource(settings_cls),
+            *secrets,
+        )
 
     @field_validator("trusted_proxy_ips", "allowed_origins", mode="before")
     @classmethod
