@@ -1,4 +1,4 @@
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     # App
     environment: str = Field(default="development")
     debug: bool      = Field(default=False)
+
+    @field_validator("trusted_proxy_ips", "allowed_origins", mode="before")
+    @classmethod
+    def _parse_comma_list(cls, v: object) -> list[str]:
+        if isinstance(v, str):
+            return [x.strip() for x in v.split(",") if x.strip()]
+        return v  # type: ignore[return-value]
 
     @property
     def is_production(self) -> bool:
