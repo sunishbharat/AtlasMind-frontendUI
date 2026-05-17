@@ -18,40 +18,22 @@ Atlasmind is an AI-powered Jira project visualiser that lets you query your proj
 ```
 AtlasMind-frontendUI/
 ├── main.py              # FastAPI bridge server (port 8001 → AtlasMind port 8000)
-├── auth.py              # PAT auth helper — X-Jira-Token header forwarding
+├── ...
 ├── pyproject.toml       # Python deps (fastapi, uvicorn, httpx, pandas, pyjanitor, numpy)
 ├── config/
-│   └── defaults.py      # Port/host constants shared by main.py
+│   └── ..
 ├── aggregator/
 │   ├── engine.py        # AggregationEngine — pandas + pyjanitor + numpy
-│   ├── field_resolver.py# FieldResolver — fuzzy Jira field name resolution
-│   ├── field_map.py     # apply_field_map — remaps custom field keys to display names
-│   └── models.py        # Pydantic models (AggregateRequest, AggregateResponse, …)
+│   ├── ....
+│   └── models.py       
 ├── docs/                # Architecture diagrams and query flow docs
 └── jira-viz/            # Svelte 5 application
     └── src/lib/
-        ├── JiraViz.svelte           # Main shell (header, layout, view switching)
-        ├── ChatPanel.svelte         # AI chat panel (Demo / Live mode)
-        ├── PatPrompt.svelte         # PAT token input (shown in Live mode)
-        ├── QueryEventClient.ts      # Typed client for /api/event (cancel, heartbeat)
-        ├── dataStore.svelte.ts      # Reactive data store + CSV parser
-        ├── state.svelte.ts          # Shared hover state
-        ├── auth.svelte.ts           # PAT auth store (localStorage)
-        ├── colorMapping.ts          # Universal semantic colour resolver (status, priority, type)
-        ├── statusColors.ts          # Backward-compat shim — re-exports colorMapping.ts
-        ├── data.ts                  # Built-in sample sprint data
+        ├── ....           
         ├── views/
-        │   ├── HierarchyView.svelte # Epic → Story → Sub-task map
-        │   └── TableView.svelte     # Flat backlog table
+        │   ├ ...
         └── charts/
-            ├── ChartView.svelte     # Tab bar + ECharts renderer + axis selectors
-            ├── ChartPanel.svelte    # Chart layout wrapper
-            ├── ChartRenderer.svelte # ECharts instance lifecycle
-            ├── AIHierarchyView.svelte # Hierarchy map for AI query results
-            ├── chartStore.svelte.ts # Bridge store (ChatPanel → ChartView)
-            ├── specBuilder.ts       # Issues → ECharts option objects
-            ├── StackedBarChart.ts   # StackedBarChart builder class
-            └── theme.ts             # Colour palette + gradient helpers
+            ├── ...
 ```
 
 ---
