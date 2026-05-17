@@ -3,6 +3,10 @@
 Atlasmind is an AI-powered Jira project visualiser that lets you query your project in plain English and instantly see issue types as interactive hierarchy maps, tables and auto-generated charts.
 **[Try it live: atlasmind.de](https://atlasmind.de/)**
 
+- Natural‑language queries → JQL generated behind the scenes
+- Hierarchy view (epic → story → subtask), tables, and charts in sync
+- Demo mode with public Jira data, live mode for your own instance
+
 ## Preview
 <p align="center">
 <img width="1908" height="985" alt="Image" src="https://github.com/user-attachments/assets/e7944eda-30e2-44a6-8f4a-90e67ff7e08a" />
