@@ -18,22 +18,20 @@ Atlasmind is an AI-powered Jira project visualiser that lets you query your proj
 ```
 AtlasMind-frontendUI/
 ├── main.py              # FastAPI bridge server (port 8001 → AtlasMind port 8000)
-├── ...
+├
 ├── pyproject.toml       # Python deps (fastapi, uvicorn, httpx, pandas, pyjanitor, numpy)
 ├── config/
-│   └── ..
+│   └── 
 ├── aggregator/
 │   ├── engine.py        # AggregationEngine — pandas + pyjanitor + numpy
-│   ├── ....
+│ 
 │   └── models.py       
-├── docs/                # Architecture diagrams and query flow docs
 └── jira-viz/            # Svelte 5 application
     └── src/lib/
-        ├── ....           
-        ├── views/
-        │   ├ ...
+        ├──           
+        ├── views/ 
         └── charts/
-            ├── ...
+            
 ```
 
 ---
@@ -194,3 +192,7 @@ npm run build
 The bridge server (`main.py`) serves `jira-viz/dist/` directly — no separate reverse proxy is needed.
 
 For cloud deployment, set `HOST=0.0.0.0`, `ALLOWED_ORIGINS=https://yourdomain.com`, and `JIRA_PAT` (or rely on per-request PAT entry from the UI). HTTPS via a load balancer is recommended to protect the PAT in transit.
+
+## Easy deployment
+Designed to be easily deployed inside a private network and connect to any Jira Cloud or Data Center instance using a personal access token.
+
