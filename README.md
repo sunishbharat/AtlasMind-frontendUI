@@ -7,7 +7,7 @@ Atlasmind is an AI-powered Jira project visualiser that lets you query your proj
 <p align="center">
 <img width="1908" height="985" alt="Image" src="https://github.com/user-attachments/assets/694b7285-5460-4418-8ece-57c86ee67dd4" />
 </p>    
----
+
 
 ## Project structure
 
