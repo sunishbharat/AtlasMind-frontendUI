@@ -1,7 +1,12 @@
 # AtlasMind Frontend UI
 
-Interactive Jira sprint visualiser built with **Svelte 5 + Vite**. Displays epics, stories, and sub-tasks as a linked hierarchy, table, and AI-driven charts — with a chat panel that queries the [AtlasMind](../AtlasMind) backend.
+Atlasmind is an AI-powered Jira project visualiser that lets you query your project in plain English and instantly see issue types as interactive hierarchy maps, tables and auto-generated charts.
+**[Try it live: atlasmind.de](https://atlasmind.de/)**
 
+## Preview
+<p align="center">
+<img width="1908" height="985" alt="Image" src="https://github.com/user-attachments/assets/694b7285-5460-4418-8ece-57c86ee67dd4" />
+</p>    
 ---
 
 ## Project structure
