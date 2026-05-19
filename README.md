@@ -12,28 +12,6 @@ Atlasmind is an AI-powered Jira project visualiser that lets you query your proj
 <img width="1908" height="985" alt="Image" src="https://github.com/user-attachments/assets/e7944eda-30e2-44a6-8f4a-90e67ff7e08a" />
 </p>    
 
-
-## Project structure
-
-```
-AtlasMind-frontendUI/
-├── main.py              # FastAPI bridge server (port 8001 → AtlasMind port 8000)
-├
-├── pyproject.toml       # Python deps (fastapi, uvicorn, httpx, pandas, pyjanitor, numpy)
-├── config/
-│   └── 
-├── aggregator/
-│   ├── engine.py        # AggregationEngine — pandas + pyjanitor + numpy
-│ 
-│   └── models.py       
-└── jira-viz/            # Svelte 5 application
-    └── src/lib/
-        ├──           
-        ├── views/ 
-        └── charts/
-            
-```
-
 ---
 
 ## Prerequisites
@@ -62,15 +40,10 @@ npm run build
 cd ../AtlasMind
 uv run python main.py
 
-# 3. Start the bridge server (port 8001)
-cd ../AtlasMind-frontendUI
-uv sync
-uv run main.py
 ```
 
 | URL | Mode |
 |-----|------|
-| `http://localhost:8001/demo` | Demo — local mock data, no AtlasMind needed |
 | `http://localhost:8001/live` | Live — queries forwarded to AtlasMind → Jira |
 | `http://localhost:8001/api/health` | Health check |
 
@@ -127,13 +100,11 @@ uv run main.py --no-aggregation  # disable pandas aggregation pipeline
 
 ---
 
-## Authentication
+## Authentication(Optional)
 
 In **Live mode**, a PAT (Personal Access Token) is required to query a private Jira instance.
 
-1. Open the app at `/live`
-2. Enter your Jira PAT in the token prompt that appears in the chat panel
-3. The token is saved to `localStorage` and sent with every query
+1. Open the app at [atlasmind.de](https://atlasmind.de/)
 
 The bridge forwards it as `X-Jira-Token` to AtlasMind, which uses it to authenticate against the Jira REST API.
 
@@ -143,30 +114,19 @@ For Docker/server deployments, set `JIRA_PAT` as an environment variable instead
 
 ## Using the app
 
-### Visualisation views
-
-| View | Description |
-|------|-------------|
-| Hierarchy Map | Epic → Story → Sub-task with animated SVG connections |
-| Issue Table | Flat backlog with indented hierarchy and hover sync |
-| AI Chart | Charts auto-generated from the last AI query result |
-
-Hover any card or table row to highlight its connections across all active views.
-
 ### AI Chat panel
 
 Click **Ask AI** (top-right) to open the chat panel.
 
-- **Demo mode** — answers from locally loaded sample data, no backend needed
 - **Live mode** — sends the query to AtlasMind, which generates JQL and queries Jira; results auto-render as charts
 
 The mode toggle shows a pulsing green dot when the AtlasMind backend is reachable, or dims to grey when offline.
 
 Example queries:
 ```
-list all open bugs in project ATLAS
-show issues assigned to me updated this week
-bugs by assignee as a bar chart
+- list all open bugs in project KAFKA
+- who are the top 10 reporters and why types of issues do they log in project hive
+- show me all the top burning topics in project hadoop, flink
 ```
 
 When a Live query returns issues, the view switches automatically to the **AI Chart** tab. Additional auto-generated chart tabs (by status, priority, assignee, type) are shown alongside the AI-specified chart.
