@@ -5,6 +5,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from core.config import settings
 from security.body_limit import BodySizeLimitMiddleware
 from security.headers import SecurityHeadersMiddleware
+from security.path_guard import PathAllowlistMiddleware
 from security.rate_limit import (
     RateLimitExceeded,
     SlowAPIMiddleware,
@@ -22,6 +23,7 @@ def setup_security(app: FastAPI) -> None:
     add_middleware call wraps everything and executes first at request time.
 
     Execution order at request time (outermost → innermost):
+      PathAllowlistMiddleware     - default-deny: unknown paths get 404 immediately
       BodySizeLimitMiddleware     - rejects oversized bodies before any parsing
       SecurityHeadersMiddleware   - adds security response headers
       ProxyHeadersMiddleware      - resolves real client IP from X-Forwarded-For
@@ -50,5 +52,8 @@ def setup_security(app: FastAPI) -> None:
     # Security response headers
     app.add_middleware(SecurityHeadersMiddleware)
 
-    # Body size cap — outermost layer, rejects before anything else reads the body
+    # Body size cap — rejects before anything else reads the body
     app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_body_size_bytes)
+
+    # Path allowlist — outermost layer, default-deny before body/rate/auth runs
+    app.add_middleware(PathAllowlistMiddleware, debug=settings.debug)
